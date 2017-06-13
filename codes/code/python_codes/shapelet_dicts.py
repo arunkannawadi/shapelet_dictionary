@@ -154,12 +154,12 @@ def plot_decomposition(cube_real, img_idx, base_coefs,N1,N2,shapelet_reconst, si
             +str(np.round(residual_energy_fraction,4)))
     ax[1,1].set_title('Rel. magnitude of coefficients')
     fig.suptitle('Shapelet Basis decomposition')
-     
+    
     plt.tight_layout()
     if(basis == 'Polar'):
-        plt.savefig('Decomp_cartesian.png', dpi=200)
+        plt.savefig('Decomp_Polar.png', dpi=200)
     elif(basis == 'XY'):
-        plt.savefig('Decomp_Polar.png', dpi = 200)
+        plt.savefig('Decomp_XY.png', dpi = 200)
     elif(basis == 'Elliptical'):
         plt.savefig('Decomp_Elliptical.png', dpi=200)
 
@@ -307,14 +307,35 @@ def solver_lasso_reg(D, signal):
 
 
 
-def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse'):
+def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise = 0):
+
+    """ Do the shapelet decomposition
+    
+    @param N1,N2 n and m quantum numbers respectively
+    @param basis do decomposition in this basis
+        -- XY - Standard Descartes coordinate shapelet space
+        -- Polar - Polar coordinate shapelet space
+        -- Elliptical - Elliptical coordinate shapelet space
+    @param solver choose an algorithm for fitting the coefficients
+        -- SVD - Singular Value Decomposition
+        -- sparse - using the Orthogonal Matching Pursuit
+        -- P_2 - Standard least squares
+        -- P_1 - Lasso regularization technique
+    """
+
     # Obtaining galaxy images
+    
     cube_real = pyfits.getdata('../../data/cube_real.fits')
     cubr_real_noiseless = pyfits.getdata('../../data/cube_real_noiseless.fits')
     background = 1.e6*0.16**2
     img = galsim.Image(78,78) # cube_real has 100, 78x78 images
-    D = np.zeros((78*78,4*N1*N2)) # alloc for Dictionary
-    base_coefs = np.zeros((N1,N2))
+    if (basis == 'XY') or (basis == 'Elliptical'):
+        D = np.zeros((78*78,4*N1*N2)) # alloc for Dictionary
+        base_coefs = np.zeros((N1,N2))
+    elif (basis == 'Polar'):
+        D = np.zeros((78*78,4*N1*N2), dtype=complex)
+        base_coefs = np.zeros((N1,N2), dtype=complex)
+
     X = np.linspace(0,77,78)  
     Y = np.linspace(0,77,78)
     
@@ -324,7 +345,10 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse'):
         shape = img.FindAdaptiveMom()
         x0,y0 = shape.moments_centroid.x, shape.moments_centroid.y ## possible swap b/w x,y
         sigma = shape.moments_sigma
-        
+       
+
+        #Make a meshgrid for the polar shapelets
+
         Xv, Yv = np.meshgrid((X-x0),(Y-y0))
         R = np.sqrt(Xv**2 + Yv**2)
         
@@ -334,29 +358,47 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse'):
                 Phi[i,j] = math.atan2(Yv[i,j], Xv[i,j])
 
         signal = cube_real[img_idx].flatten()
+
+        if (noise == 1):
+            import random
+            random.seed()
+            signal = signal + np.random.rand(np.shape(signal)[0])
+
         shapelet_reconst = np.zeros_like(signal)
 
-        #Decompose into Polar or XY 
+        #Decompose into Polar or XY or Elliptical w/ inner product 
         if (basis == 'Polar'):
             k_p = 0
+            #D_r = np.zeros_like(D)
+            #D_im = np.zeros_like(D)
+            #base_coefs_r = np.zeros_like(base_coefs)
+            #base_coefs_im = np.zeros_like(base_coefs)
             for n in xrange(N1):
                 for m in xrange(-n,n+1,2):
                     if (n <= (78/sigma - 1)): # n_max ~ theta_max (image size) / theta_min (pixel or kernel smoothing size) -1 
                         arr = p_shapelet.polar_shapelets_real(n,m,sigma)(R, Phi).flatten() 
                         arr_im = p_shapelet.polar_shapelets_imag(n,m,sigma)(R, Phi).flatten()
                         
-                        #I'M ONLY LETTING REAL COMPONENTS GO TO THE D MATRIX
-                        D[:,k_p] = arr; #D[:,k+N1*N2]=arr2; D[:,k+2*N1*N2]=arr3; D[:,k+3*N1*N2]=arr4
+                        arr_res = arr + 1j*arr_im 
+                        D[:,k_p] = arr_res 
+                        #D[:,k+N1*N2]=arr2; D[:,k+2*N1*N2]=arr3; D[:,k+3*N1*N2]=arr
                         k_p += 1
+                        arr_norm2_res = np.dot(arr_res, arr_res)
                         arr_norm2 = np.dot(arr, arr)
                         arr_norm_im2 = np.dot(arr_im, arr_im)
                         coef_r = np.dot(arr,signal)
                         coef_im = np.dot(arr_im, signal)
+                        coef_res= np.dot(arr_res, signal)
                         if (coef_im==0) or (coef_r==0): 
-                            base_coefs[n,m] = 0
+                            #base_coefs_r[n,m] = 0
+                            #base_coefs_im[n,m] = 0
+                            base_coefs[n,m]=0 
                         else: 
-                            base_coefs[n,m] = coef_r/np.sqrt(arr_norm2)                            
-                            shapelet_reconst = shapelet_reconst + coef_r*arr/arr_norm2 + coef_im*arr_im/arr_norm_im2
+                            #base_coefs_r[n,m] = coef_r/np.sqrt(arr_norm2)
+                            #base_coefs_im[n,m] = coef_im/np.sqrt(arr_norm_im2)
+                            base_coefs[n,m] = coef_res/np.sqrt(arr_norm2_res)
+                            shapelet_reconst = shapelet_reconst \
+                                    + (coef_res*arr_res).real/arr_norm2
                     else: break
         elif(basis == 'XY'):
              for k in xrange(N1*N2):
@@ -380,14 +422,15 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse'):
             
             pass
 
-        residual= signal - shapelet_reconst
+        residual= (signal - shapelet_reconst).real
         residual_energy_fraction = np.sum(residual**2)/np.sum(signal**2)
         recovered_energy_fraction = np.sum(shapelet_reconst**2)/np.sum(signal**2)
 
         print "Comparing moments_amp to base_coefs[0,0]", base_coefs[0,0], shape.moments_amp
-        print "Base coefficients sum over signal", np.sum(base_coefs**2)/(np.sum(signal**2)), np.sum(residual**2)/np.sum(signal**2)
+        print "Base coefficients sum over signal", np.sum(np.abs(base_coefs)**2)/(np.sum(signal**2)), np.sum(residual**2)/np.sum(signal**2) 
+                #np.abs added for the complex ones with Polar coordinates, shouldn't change result for ordinary real values
 
-        fig = plot_decomposition(cube_real, img_idx, base_coefs,N1,N2,shapelet_reconst, signal, residual,\
+        fig = plot_decomposition(cube_real, img_idx, base_coefs.real , N1,N2,shapelet_reconst, signal, residual,\
                 residual_energy_fraction ,recovered_energy_fraction, basis)         
 
         # Sparse solver
@@ -395,31 +438,37 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse'):
             sparse_coefs, sparse_reconst, sparse_residual, \
                 residual_energy_fraction, recovered_energy_fraction, \
                 n_nonzero_coefs = sparse_solver(D, signal, N1, N2)
-            plot_solution(N1,N2,cube_real, img_idx, sparse_reconst, sparse_residual, sparse_coefs,\
+            
+            plot_solution(N1,N2,cube_real, img_idx, \
+                    sparse_reconst.real, sparse_residual.real, sparse_coefs,\
                     recovered_energy_fraction, residual_energy_fraction, n_nonzero_coefs, \
-                    fig, 'Sparse_solution.png')
+                    fig, 'Sparse_solution_'+basis+'_.png')
 
         # SVD solver // following berry approach
         if (solver == 'SVD'):
 
-            coeffs_SVD, reconstruction_SVD, residual_SVD, \
-            residual_energy_fraction_SVD, recovered_energy_fraction_SVD, \
-            n_nonzero_coefs_SVD = solver_SVD(D, signal)
+                coeffs_SVD, reconstruction_SVD, residual_SVD, \
+                residual_energy_fraction_SVD, recovered_energy_fraction_SVD, \
+                n_nonzero_coefs_SVD = solver_SVD(D.real, signal)
+                
+                plot_solution(N1,N2,cube_real, img_idx, reconstruction_SVD.real, residual_SVD.real,\
+                        coeffs_SVD.real, \
+                        recovered_energy_fraction_SVD, residual_energy_fraction_SVD, \
+                        n_nonzero_coefs_SVD, fig, 'SVD_solution_'+basis+'_.png')
             
-            plot_solution(N1,N2,cube_real, img_idx, reconstruction_SVD, residual_SVD, coeffs_SVD,\
-            recovered_energy_fraction, residual_energy_fraction, n_nonzero_coefs_SVD, \
-            fig, 'SVD_solution.png')
 
         #Ordinary least squares solver
-        if (solver == 'P_2'):
-            
-            coeffs_lstsq, reconstruction_lstsq, residual_lstsq, \
-            residual_energy_fraction_lstsq, recovered_energy_fraction_lstsq, \
-            n_nonzero_coefs_lstsq = solver_lstsq(D, signal)
-            
-            plot_solution(N1,N2,cube_real, img_idx, reconstruction_lstsq, residual_lstsq, \
-                    coeffs_lstsq, recovered_energy_fraction, residual_energy_fraction, \
-                    n_nonzero_coefs_lstsq, fig, 'lstsq_solution.png')
+        if (solver == 'P_2'):  
+  
+                coeffs_lstsq, reconstruction_lstsq, residual_lstsq, \
+                residual_energy_fraction_lstsq, recovered_energy_fraction_lstsq, \
+                n_nonzero_coefs_lstsq = solver_lstsq(D, signal)
+                
+                plot_solution(N1,N2,cube_real, img_idx, \
+                        reconstruction_lstsq.real, residual_lstsq.real, \
+                        coeffs_lstsq, \
+                        recovered_energy_fraction_lstsq, residual_energy_fraction_lstsq, \
+                        n_nonzero_coefs_lstsq, fig, 'lstsq_solution_'+basis+'_.png')
 
 
         if (solver == 'P_1'): #This is with the Lasso regularization
@@ -427,12 +476,15 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse'):
             residual_energy_fraction_lasso, recovered_energy_fraction_lasso, \
             n_nonzero_coefs_lasso = solver_lasso_reg(D, signal)
             
-            plot_solution(N1,N2,cube_real, img_idx, reconstruction_lasso, residual_lasso, \
+            plot_solution(N1,N2,cube_real, img_idx, reconstruction_lasso.real, residual_lasso.real, \
                     coeffs_lasso, recovered_energy_fraction_lasso, residual_energy_fraction_lasso, \
-                    n_nonzero_coefs_lasso, fig, 'lasso_solution.png')
+                    n_nonzero_coefs_lasso, fig, 'lasso_solution_'+basis+'_.png')
 
 if __name__=='__main__':
-    shapelet_decomposition(int(sys.argv[1]),int(sys.argv[2]), sys.argv[3], sys.argv[4])
+    shapelet_decomposition(int(sys.argv[1]),int(sys.argv[2]),\
+            sys.argv[3],\
+            sys.argv[4],\
+            int(sys.argv[5]))
     #show_some_shapelets()
     #p_shapelet.plot_shapelets(6,2,1)
     #check_orthonormality()
