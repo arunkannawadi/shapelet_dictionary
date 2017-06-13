@@ -9,6 +9,14 @@ Pi = math.pi
 factorial = math.factorial
 
 def Coeff(N, M, beta):
+    """ Determine the normalising coefficients that appear in front of the Laguerre polynomials.
+
+        @param N        Energy quantum number
+        @param M        Azimuthal quantum number
+
+        @returns        Two coefficients, both of which need to multiply the Laguerre polynomials
+    """
+
     B = (-1)**((N - np.abs(M))/2) / beta**(np.abs(M) + 1)
     C = (float(factorial(int((N-np.abs(M))/2)))/Pi/float(factorial((N+np.abs(M))/2)))**(.5)
     return B, C
