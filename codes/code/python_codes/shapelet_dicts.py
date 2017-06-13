@@ -19,7 +19,7 @@ import math
 from sklearn.linear_model import OrthogonalMatchingPursuit as OMP
 import polar_shapelet_decomp as p_shapelet
 
-DEBUG = 1
+DEBUG =1
 
 ##Define orthonormal basis - shapelets
 def shapelet1d(n,x0=0,s=1):
@@ -106,6 +106,28 @@ def plot_decomposition(cube_real, img_idx, base_coefs,N1,N2,shapelet_reconst, si
             +str(np.round(residual_energy_fraction,4)))
     ax[1,1].set_title('Rel. magnitude of coefficients')
     fig.suptitle('Shapelet Basis decomposition')
+    
+    def on_draw(event):
+       bboxes = []
+       for label in labels:
+           bbox = label.get_window_extent()
+           # the figure transform goes from relative coords->pixels and we
+           # want the inverse of that
+           bboxi = bbox.inverse_transformed(fig.transFigure)
+           bboxes.append(bboxi)
+
+       # this is the bbox that bounds all the bboxes, again in relative
+       # figure coords
+       bbox = mtransforms.Bbox.union(bboxes)
+       if fig.subplotpars.left < bbox.width:
+           # we need to move it over
+           fig.subplots_adjust(left=1.1*bbox.width) # pad a little
+           fig.canvas.draw()
+       return False
+
+    fig.canvas.mpl_connect('draw_event', on_draw)
+    
+    plt.show()
 
     if(basis == 'Polar'):
         plt.savefig('Decomp_cartesian.png')
@@ -174,6 +196,7 @@ def solver_SVD(D, signal):
     
     if(DEBUG):
         print('shape_coeffs ', np.shape(coeffs_SVD))
+        print('shape_D', np.shape(D))
     n_nonzero_coefs_SVD = np.count_nonzero(coeffs_SVD)
     reconstruction_SVD = np.dot(D,coeffs_SVD)
     residual_SVD = signal - reconstruction_SVD
@@ -212,9 +235,7 @@ def solver_lasso_reg(D, signal):
             residual_energy_fraction_lasso, recovered_energy_fraction_lasso, n_nonzero_coefs_lasso
 
 
-
-
-def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse'):
+def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise = False):
     # Obtaining galaxy images
     cube_real = pyfits.getdata('../../data/cube_real.fits')
     cubr_real_noiseless = pyfits.getdata('../../data/cube_real_noiseless.fits')
@@ -241,6 +262,14 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse'):
                 Phi[i,j] = math.atan2(Yv[i,j], Xv[i,j])
 
         signal = cube_real[img_idx].flatten()
+
+        if(1):
+            import random
+            random.seed()
+            print(signal, np.shape(signal))
+            signal = signal + np.random.rand(np.shape(signal)[0])
+            print(signal, np.shape(signal))
+
         shapelet_reconst = np.zeros_like(signal)
 
         #Decompose into Polar or XY 
@@ -297,25 +326,29 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse'):
         fig = plot_decomposition(cube_real, img_idx, base_coefs,N1,N2,shapelet_reconst, signal, residual,\
                 residual_energy_fraction ,recovered_energy_fraction, basis)         
 
+
         # Sparse solver
         if (solver == 'sparse'):
             sparse_coefs, sparse_reconst, sparse_residual, \
-                residual_energy_fraction, recovered_energy_fraction, \
+                residual_energy_fraction_sparse, recovered_energy_fraction_sparse, \
                 n_nonzero_coefs = sparse_solver(D, signal, N1, N2)
             plot_solution(N1,N2,cube_real, img_idx, sparse_reconst, sparse_residual, sparse_coefs,\
-                    recovered_energy_fraction, residual_energy_fraction, n_nonzero_coefs, \
+                    recovered_energy_fraction_sparse, residual_energy_fraction_sparse, \
+                    n_nonzero_coefs, \
                     fig, 'Sparse_solution.png')
 
         # SVD solver // following berry approach
         if (solver == 'SVD'):
 
-            reconstruction_SVD, residual_SVD, coeffs_SVD,\
-            recovered_energy_fraction, residual_energy_fraction, \
+            coeffs_SVD, reconstruction_SVD, residual_SVD,\
+            residual_energy_fraction_SVD, recovered_energy_fraction_SVD, \
             n_nonzero_coefs_SVD =solver_SVD(D, signal)
             
-            plot_solution(N1,N2,cube_real, img_idx, reconstruction_SVD, residual_SVD, coeffs_SVD,\
-            recovered_energy_fraction, residual_energy_fraction, n_nonzero_coefs_SVD, \
-            fig, 'SVD_solution.png')
+            print(np.shape(residual_SVD), np.shape(reconstruction_SVD))
+            plot_solution(N1,N2,cube_real, img_idx, reconstruction_SVD, residual_SVD, coeffs_SVD, \
+                    recovered_energy_fraction_SVD, residual_energy_fraction_SVD, \
+                    n_nonzero_coefs_SVD,\
+                    fig, 'SVD_solution.png')
 
         #Ordinary least squares solver
         if (solver == 'P_2'):
