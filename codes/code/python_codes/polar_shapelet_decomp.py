@@ -13,6 +13,7 @@ def Coeff(N, M, beta):
 
         @param N        Energy quantum number
         @param M        Azimuthal quantum number
+        @param beta     Size parameter of the shapelet basis
 
         @returns        Two coefficients, both of which need to multiply the Laguerre polynomials
     """
