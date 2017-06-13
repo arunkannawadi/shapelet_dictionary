@@ -3,6 +3,7 @@ import numpy as np
 import numpy.linalg as linalg
 from scipy.special import hermitenorm
 from scipy.integrate import quad
+from sklearn import linear_model
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import pyfits
@@ -197,6 +198,21 @@ def solver_lstsq(D, signal):
     return coeffs_lstsq, reconstruction_lstsq, residual_lstsq, \
             residual_energy_fraction_lstsq, recovered_energy_fraction_lstsq, n_nonzero_coefs_lstsq
 
+def solver_lasso_reg(D, signal):
+    
+    lasso_fit = linear_model.Lasso(alpha = 0.001, max_iter=10000, fit_intercept = False).fit(D, signal)
+    coeffs_lasso = lasso_fit.coef_
+    reconstruction_lasso = np.dot(D, coeffs_lasso)
+    residual_lasso = signal - reconstruction_lasso
+    residual_energy_fraction_lasso = np.sum(residual_lasso**2)/np.sum(signal**2)
+    recovered_energy_fraction_lasso = np.sum(reconstruction_lasso**2)/np.sum(signal**2)
+    n_nonzero_coefs_lasso = np.count_nonzero(coeffs_lasso)
+
+    return coeffs_lasso, reconstruction_lasso, residual_lasso, \
+            residual_energy_fraction_lasso, recovered_energy_fraction_lasso, n_nonzero_coefs_lasso
+
+
+
 
 def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse'):
     # Obtaining galaxy images
@@ -313,8 +329,14 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse'):
                     n_nonzero_coefs_lstsq, fig, 'lstsq_solution.png')
 
 
-        if (solver == 'P_1'): #This is with the 
-            pass
+        if (solver == 'P_1'): #This is with the Lasso regularization
+            coeffs_lasso, reconstruction_lasso, residual_lasso, \
+            residual_energy_fraction_lasso, recovered_energy_fraction_lasso, \
+            n_nonzero_coefs_lasso = solver_lasso_reg(D, signal)
+            
+            plot_solution(N1,N2,cube_real, img_idx, reconstruction_lasso, residual_lasso, \
+                    coeffs_lasso, recovered_energy_fraction_lasso, residual_energy_fraction_lasso, \
+                    n_nonzero_coefs_lasso, fig, 'lasso_solution.png')
 
 if __name__=='__main__':
     shapelet_decomposition(int(sys.argv[1]),int(sys.argv[2]), sys.argv[3], sys.argv[4])
