@@ -10,7 +10,7 @@ import pyfits
 import galsim
 import math
 
-import pdb; pdb.set_trace()
+#import pdb; pdb.set_trace()
 
 #------------------
 # berry == Berry et al. MNRAS 2004
