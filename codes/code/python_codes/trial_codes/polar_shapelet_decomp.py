@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from pylab import imshow, meshgrid
 import matplotlib.cm as cm
 from scipy import special
-
+from scipy.integrate import quad,dblquad
 
 #-----------------
 # berry == Berry et al. MNRAS 2004
@@ -102,7 +102,15 @@ def check_orthonormality():
 if __name__ == "__main__":
     
   
-    plot_shapelets(0,0, 1) 
+    #plot_shapelets(0,0, 1)
+    n =1; m = 1; beta = 1.;
+    
+    for n in xrange(10):
+        for m in xrange(-n,n+1,2):
+            print('berry')
+            print(dblquad(lambda r,phi: r*polar_shapelets_berry(n,m,beta)(r,phi).conjugate()*polar_shapelets_berry(n,m,beta)(r,phi), 0, np.inf, lambda r: 0, lambda r: 2*Pi))
+            print('refregier')
+            print(dblquad(lambda r,phi: r*polar_shapelets_regregier(n,m,beta)(r,phi).conjugate()*polar_shapelets_refregier(n,m,beta)(r,phi), 0, np.inf, lambda r: 0, lambda r: 2*Pi))    
     #check_orthonormality() 
     #print(polar_shapelets(1,1,0,Pi/2, 1.))     
    

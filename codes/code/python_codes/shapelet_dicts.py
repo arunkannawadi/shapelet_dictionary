@@ -10,7 +10,7 @@ import pyfits
 import galsim
 import math
 
-#import pdb; pdb.set_trace()
+import pdb; pdb.set_trace()
 
 #------------------
 # berry == Berry et al. MNRAS 2004
@@ -138,12 +138,12 @@ def plot_decomposition(cube_real, img_idx, base_coefs,N1,N2,shapelet_reconst, si
     @param basis variable which controls the selected __basis__ in which decomposition was made
 
     """
-    print(base_coefs)
-    print(shapelet_reconst)
-    print(signal)
-    print(residual)
+    #print(base_coefs)
+    #print(shapelet_reconst)
+    #print(signal)
+    #print(residual)
 
-    fig, ax = plt.subplots(2,2, figsize = (60, 60))
+    fig, ax = plt.subplots(2,2, figsize = (10, 10))
     coeff_plot2d(base_coefs,N1,N2,ax=ax[1,1],fig=fig)
     vmin, vmax = min(shapelet_reconst.min(),signal.min()), max(shapelet_reconst.max(),signal.max())
 
@@ -161,7 +161,7 @@ def plot_decomposition(cube_real, img_idx, base_coefs,N1,N2,shapelet_reconst, si
     
     plt.tight_layout()
     plt.gcf()
-    plt.savefig('Decomp_'+basis+'_.png', dpi=200)
+    plt.savefig('Plots/Decomp_'+basis+'_.png', dpi=200)
 
     return fig
 
@@ -226,28 +226,28 @@ def solver_SVD(D, signal):
     @param D basis coefficient matrix
     @param signal original image
 
+    @return
+
     """
+
     rows_SVD, columns_SVD = np.shape(D)
-    U, s, VT = linalg.svd(D, full_matrices = True, compute_uv = True)
+    U, s, VT = linalg.svd(D, full_matrices = True, compute_uv = True)    
+  
+    # In the docs it is said that the matrix returns V_transpose and not V 
+    V = (VT.conjugate()).transpose() 
     
-    if (DEBUG):
-        print(s); print(len(s))
-
-    V = VT.transpose() # In the docs it is said that the matrix returns V_transpose and not V 
-   
+    # Make 1 / sigma_i array, where sigma_i are the singular values obtained from SVD
     dual_s = 1./s
-    S = np.eye(rows_SVD, columns_SVD)*s; S_dual = np.eye(rows_SVD, columns_SVD)*dual_s
 
-    if(DEBUG):
-        print(S); print("S_dual:"); print(S_dual)
-        print(np.shape(S), np.shape(S_dual))
-        print("U: ", np.shape(U),"V: ", np.shape(V),"S_dual: ", np.shape(S_dual), "signal: ", np.shape(signal))
-
-    coeffs_SVD = np.dot(V, np.dot(S_dual.transpose(), np.dot(U.transpose(),signal)))
+    S = np.zeros(D.shape)
+    S_dual = np.zeros(D.shape)
     
-    if(DEBUG):
-        print('shape_coeffs ', np.shape(coeffs_SVD))
-        print('shape_D', np.shape(D))
+    for i in xrange(len(s)):
+        S[i,i] = s[i]
+        S_dual[i,i] = dual_s[i]
+    
+    coeffs_SVD = np.dot(V, np.dot((S_dual.conjugate()).transpose(), np.dot((U.conjugate()).transpose(),signal)))
+    
     n_nonzero_coefs_SVD = np.count_nonzero(coeffs_SVD)
     reconstruction_SVD = np.dot(D,coeffs_SVD)
     residual_SVD = signal - reconstruction_SVD
@@ -280,7 +280,7 @@ def solver_lstsq(D, signal):
     return coeffs_lstsq, reconstruction_lstsq, residual_lstsq, \
             residual_energy_fraction_lstsq, recovered_energy_fraction_lstsq, n_nonzero_coefs_lstsq
 
-def solver_lasso_reg(D, signal):
+def solver_lasso_reg(D, signal, alpha = None):
     
     """Find appropriate weights for the basis coefficients 
     obtained by the inner product routine in __shapelet_decomposition__
@@ -290,8 +290,9 @@ def solver_lasso_reg(D, signal):
     @param signal original image
 
     """
-    
-    lasso_fit = linear_model.Lasso(alpha = 0.001, max_iter=10000, fit_intercept = False).fit(D, signal)
+    if (alpha == None):
+        alpha = 0.001
+    lasso_fit = linear_model.Lasso(alpha = 0.0001, max_iter=10000, fit_intercept = False).fit(D, signal)
     coeffs_lasso = lasso_fit.coef_
     reconstruction_lasso = np.dot(D, coeffs_lasso)
     residual_lasso = signal - reconstruction_lasso
@@ -367,7 +368,7 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise =
         #Decompose into Polar or XY or Elliptical w/ inner product 
         if (basis == 'Polar'):
             k_p = 0
-            polar_basis = 'berry'
+            polar_basis = 'refregier'
             #D_r = np.zeros_like(D)
             #D_im = np.zeros_like(D)
             #base_coefs_r = np.zeros_like(base_coefs)
@@ -448,19 +449,19 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise =
             plot_solution(N1,N2,cube_real, img_idx, \
                     sparse_reconst.real, sparse_residual.real, sparse_coefs,\
                     recovered_energy_fraction, residual_energy_fraction, n_nonzero_coefs, \
-                    fig, 'Sparse_solution_'+basis+'_.png')
+                    fig, 'Plots/Sparse_solution_'+basis+'_.png')
 
         # SVD solver // following berry approach
         if (solver == 'SVD'):
 
                 coeffs_SVD, reconstruction_SVD, residual_SVD, \
                 residual_energy_fraction_SVD, recovered_energy_fraction_SVD, \
-                n_nonzero_coefs_SVD = solver_SVD(D.real, signal)
+                n_nonzero_coefs_SVD = solver_SVD(D, signal)
                 
                 plot_solution(N1,N2,cube_real, img_idx, reconstruction_SVD.real, residual_SVD.real,\
                         coeffs_SVD.real, \
                         recovered_energy_fraction_SVD, residual_energy_fraction_SVD, \
-                        n_nonzero_coefs_SVD, fig, 'SVD_solution_'+basis+'_.png')
+                        n_nonzero_coefs_SVD, fig, 'Plots/SVD_solution_'+basis+'_.png')
             
 
         #Ordinary least squares solver
@@ -474,17 +475,18 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise =
                         reconstruction_lstsq.real, residual_lstsq.real, \
                         coeffs_lstsq, \
                         recovered_energy_fraction_lstsq, residual_energy_fraction_lstsq, \
-                        n_nonzero_coefs_lstsq, fig, 'lstsq_solution_'+basis+'_.png')
+                        n_nonzero_coefs_lstsq, fig, 'Plots/lstsq_solution_'+basis+'_.png')
 
 
         if (solver == 'P_1'): #This is with the Lasso regularization
+            
             coeffs_lasso, reconstruction_lasso, residual_lasso, \
             residual_energy_fraction_lasso, recovered_energy_fraction_lasso, \
-            n_nonzero_coefs_lasso = solver_lasso_reg(D, signal)
+            n_nonzero_coefs_lasso = solver_lasso_reg(D, signal, 0)
             
             plot_solution(N1,N2,cube_real, img_idx, reconstruction_lasso.real, residual_lasso.real, \
                     coeffs_lasso, recovered_energy_fraction_lasso, residual_energy_fraction_lasso, \
-                    n_nonzero_coefs_lasso, fig, 'lasso_solution_'+basis+'_.png')
+                    n_nonzero_coefs_lasso, fig, 'Plots/lasso_solution_'+basis+'_.png')
 
 if __name__=='__main__':
     shapelet_decomposition(int(sys.argv[1]),int(sys.argv[2]),\
