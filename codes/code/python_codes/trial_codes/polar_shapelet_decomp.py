@@ -102,7 +102,7 @@ def check_orthonormality():
 if __name__ == "__main__":
     
   
-    plot_shapelets(6,6, 1) 
-    check_orthonormality() 
+    plot_shapelets(0,0, 1) 
+    #check_orthonormality() 
     #print(polar_shapelets(1,1,0,Pi/2, 1.))     
    

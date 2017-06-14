@@ -18,7 +18,7 @@ import math
 #------------------
 
 from sklearn.linear_model import OrthogonalMatchingPursuit as OMP
-import polar_shapelet_decomp as p_shapelet
+import trial_codes.polar_shapelet_decomp as p_shapelet
 
 DEBUG = 0
 
@@ -138,6 +138,10 @@ def plot_decomposition(cube_real, img_idx, base_coefs,N1,N2,shapelet_reconst, si
     @param basis variable which controls the selected __basis__ in which decomposition was made
 
     """
+    print(base_coefs)
+    print(shapelet_reconst)
+    print(signal)
+    print(residual)
 
     fig, ax = plt.subplots(2,2, figsize = (60, 60))
     coeff_plot2d(base_coefs,N1,N2,ax=ax[1,1],fig=fig)
@@ -156,12 +160,8 @@ def plot_decomposition(cube_real, img_idx, base_coefs,N1,N2,shapelet_reconst, si
     fig.suptitle('Shapelet Basis decomposition')
     
     plt.tight_layout()
-    if(basis == 'Polar'):
-        plt.savefig('Decomp_Polar.png', dpi=200)
-    elif(basis == 'XY'):
-        plt.savefig('Decomp_XY.png', dpi = 200)
-    elif(basis == 'Elliptical'):
-        plt.savefig('Decomp_Elliptical.png', dpi=200)
+    plt.gcf()
+    plt.savefig('Decomp_'+basis+'_.png', dpi=200)
 
     return fig
 
@@ -189,10 +189,8 @@ def plot_solution(N1,N2,cube_real, img_idx, reconst, residual, coefs,\
     ax2[0,0].set_title('Original (noisy) image'); ax2[0,1].set_title('Reconstructed image - Frac. of energy = '+str(np.round(recovered_energy_fraction,4)))
     ax2[1,0].set_title('Residual image - Frac. of energy = '+str(np.round(residual_energy_fraction,4))); ax2[1,1].set_title('Rel. magnitude of coefficients - '+str(n_nonzero_coefs))
     fig2.suptitle('Sparse decomposition from an semi-intelligent Dictionary :) ')
-    
-    plt.tight_layout()
-    plt.savefig(Path, dpi=200)
 
+    plt.savefig(Path, dpi=200)
 
 def sparse_solver(D, signal, N1, N2):
 
@@ -369,6 +367,7 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise =
         #Decompose into Polar or XY or Elliptical w/ inner product 
         if (basis == 'Polar'):
             k_p = 0
+            polar_basis = 'berry'
             #D_r = np.zeros_like(D)
             #D_im = np.zeros_like(D)
             #base_coefs_r = np.zeros_like(base_coefs)
@@ -376,14 +375,20 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise =
             for n in xrange(N1):
                 for m in xrange(-n,n+1,2):
                     if (n <= (78/sigma - 1)): # n_max ~ theta_max (image size) / theta_min (pixel or kernel smoothing size) -1 
-                        arr = p_shapelet.polar_shapelets_real(n,m,sigma)(R, Phi).flatten() 
-                        arr_im = p_shapelet.polar_shapelets_imag(n,m,sigma)(R, Phi).flatten()
-                        
-                        arr_res = arr + 1j*arr_im 
+                        if (polar_basis == 'refregier'):
+                            arr_res = \
+                                    p_shapelet.polar_shapelets_refregier(n,m,sigma)(R,Phi).flatten() 
+                            arr = arr_res.real
+                            arr_im = arr_res.imag
+                        elif (polar_basis == 'berry'):
+                            arr_res = p_shapelet.polar_shapelets_berry(n,m,sigma)(R,Phi).flatten()
+                            arr = arr_res.real 
+                            arr_im = arr_res.imag
+                             
                         D[:,k_p] = arr_res 
                         #D[:,k+N1*N2]=arr2; D[:,k+2*N1*N2]=arr3; D[:,k+3*N1*N2]=arr
                         k_p += 1
-                        arr_norm2_res = np.dot(arr_res, arr_res)
+                        arr_norm2_res = np.dot(arr_res,arr_res)
                         arr_norm2 = np.dot(arr, arr)
                         arr_norm_im2 = np.dot(arr_im, arr_im)
                         coef_r = np.dot(arr,signal)
@@ -396,9 +401,9 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise =
                         else: 
                             #base_coefs_r[n,m] = coef_r/np.sqrt(arr_norm2)
                             #base_coefs_im[n,m] = coef_im/np.sqrt(arr_norm_im2)
-                            base_coefs[n,m] = coef_res/np.sqrt(arr_norm2_res)
+                            base_coefs[n,m] = (coef_res/np.sqrt(arr_norm2_res)).real
                             shapelet_reconst = shapelet_reconst \
-                                    + (coef_res*arr_res).real/arr_norm2
+                                    + (coef_res*arr_res/arr_norm2_res).real
                     else: break
         elif(basis == 'XY'):
              for k in xrange(N1*N2):
@@ -422,16 +427,17 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise =
             
             pass
 
-        residual= (signal - shapelet_reconst).real
+        residual= signal - shapelet_reconst
         residual_energy_fraction = np.sum(residual**2)/np.sum(signal**2)
         recovered_energy_fraction = np.sum(shapelet_reconst**2)/np.sum(signal**2)
 
-        print "Comparing moments_amp to base_coefs[0,0]", base_coefs[0,0], shape.moments_amp
-        print "Base coefficients sum over signal", np.sum(np.abs(base_coefs)**2)/(np.sum(signal**2)), np.sum(residual**2)/np.sum(signal**2) 
+        print "Comparing moments_amp to base_coefs[0,0]", np.abs(base_coefs[0,0]), shape.moments_amp
+        print "Base coefficients sum over signal", (np.sum(base_coefs.real**2))/(np.sum(signal**2)), np.sum(residual**2)/np.sum(signal**2) 
                 #np.abs added for the complex ones with Polar coordinates, shouldn't change result for ordinary real values
 
-        fig = plot_decomposition(cube_real, img_idx, base_coefs.real , N1,N2,shapelet_reconst, signal, residual,\
-                residual_energy_fraction ,recovered_energy_fraction, basis)         
+        fig = plot_decomposition(cube_real, img_idx, \
+                base_coefs, N1, N2, shapelet_reconst, signal, \
+                residual, residual_energy_fraction ,recovered_energy_fraction, basis)         
 
         # Sparse solver
         if (solver == 'sparse'):
