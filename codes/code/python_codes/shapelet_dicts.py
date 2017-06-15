@@ -10,7 +10,7 @@ import pyfits
 import galsim
 import math
 
-#import pdb; pdb.set_trace()
+import pdb; pdb.set_trace()
 
 #------------------
 # berry == Berry et al. MNRAS 2004
@@ -328,12 +328,13 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise =
     cubr_real_noiseless = pyfits.getdata('../../data/cube_real_noiseless.fits')
     background = 1.e6*0.16**2
     img = galsim.Image(78,78) # cube_real has 100, 78x78 images
+    
     if (basis == 'XY') or (basis == 'Elliptical'):
         D = np.zeros((78*78,4*N1*N2)) # alloc for Dictionary
         base_coefs = np.zeros((N1,N2))
     elif (basis == 'Polar'):
-        D = np.zeros((78*78,4*N1*N2), dtype=complex)
-        base_coefs = np.zeros((N1,N2), dtype=complex)
+        D = np.zeros((78*78,4*N1*N2))#, dtype=complex)
+        base_coefs = np.zeros((N1,N2))#, dtype=complex)
 
     X = np.linspace(0,77,78)  
     Y = np.linspace(0,77,78)
@@ -344,7 +345,7 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise =
         shape = img.FindAdaptiveMom()
         x0,y0 = shape.moments_centroid.x, shape.moments_centroid.y ## possible swap b/w x,y
         sigma = shape.moments_sigma
-       
+        n_max = 20
 
         #Make a meshgrid for the polar shapelets
 
@@ -357,7 +358,6 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise =
                 Phi[i,j] = math.atan2(Yv[i,j], Xv[i,j])
 
         signal = cube_real[img_idx].flatten()
-
         if (noise == 1):
             import random
             random.seed()
@@ -375,7 +375,7 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise =
             #base_coefs_im = np.zeros_like(base_coefs)
             for n in xrange(N1):
                 for m in xrange(-n,n+1,2):
-                    if (n <= (78/sigma - 1)): # n_max ~ theta_max (image size) / theta_min (pixel or kernel smoothing size) -1 
+                    if (n <= n_max): # n_max ~ theta_max (image size) / theta_min (pixel or kernel smoothing size) -1 
                         if (polar_basis == 'refregier'):
                             arr_res = \
                                     p_shapelet.polar_shapelets_refregier(n,m,sigma)(R,Phi).flatten() 
@@ -402,14 +402,14 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise =
                         else: 
                             #base_coefs_r[n,m] = coef_r/np.sqrt(arr_norm2)
                             #base_coefs_im[n,m] = coef_im/np.sqrt(arr_norm_im2)
-                            base_coefs[n,m] = (coef_res/np.sqrt(arr_norm2_res)).real
+                            base_coefs[n,m] = coef_res/np.sqrt(arr_norm2_res)
                             shapelet_reconst = shapelet_reconst \
-                                    + (coef_res*arr_res/arr_norm2_res).real
+                                    + coef_res*arr_res/arr_norm2_res
                     else: break
         elif(basis == 'XY'):
              for k in xrange(N1*N2):
                 m,n = k/N1, k%N1 
-                if (m+n <= (78/sigma - 1)): 
+                if (m+n <= n_max): 
                     arr = shapelet2d(m,n,x0=x0,y0=y0,sx=sigma,sy=sigma)(X,Y).flatten()
                     #arr2 = shapelet2d(m,n,x0=x0,y0=y0,sx=0.5*sigma,sy=0.5*sigma)(X,Y).flatten()
                     #arr3 = shapelet2d(m,n,x0=x0,y0=y0,sx=1.5*sigma,sy=2.*sigma)(X,Y).flatten()
@@ -482,7 +482,7 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', noise =
             
             coeffs_lasso, reconstruction_lasso, residual_lasso, \
             residual_energy_fraction_lasso, recovered_energy_fraction_lasso, \
-            n_nonzero_coefs_lasso = solver_lasso_reg(D, signal, 0)
+            n_nonzero_coefs_lasso = solver_lasso_reg(D, signal, 0.0000001)
             
             plot_solution(N1,N2,cube_real, img_idx, reconstruction_lasso.real, residual_lasso.real, \
                     coeffs_lasso, recovered_energy_fraction_lasso, residual_energy_fraction_lasso, \
