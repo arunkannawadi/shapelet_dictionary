@@ -1,10 +1,10 @@
 Image names are formated as following:  
 
 1st part of the string is the solver included:  
-    -- lstsq_* - least squares solution  
-    -- lasso_* - lasso regularization method  
-    -- SVD_* - singular value decomposition  
-    -- Sparse_* - Orthogonal matching pursuit method (OMP)  
+    -- *lstsq_* - least squares solution  
+    -- *lasso_* - lasso regularization method  
+    -- *SVD_* - singular value decomposition  
+    -- *Sparse_* - Orthogonal matching pursuit method (OMP)  
 
 2nd part refers to noise scale added to the imag. That is, constant in front of the random matrix:  
     -- *_noise_scale_*  
