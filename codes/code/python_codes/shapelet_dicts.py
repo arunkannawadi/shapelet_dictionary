@@ -1,9 +1,14 @@
-import sys
+import sys,os
 import numpy as np
 import numpy.linalg as linalg
 from scipy.special import hermitenorm
 from scipy.integrate import quad
 from sklearn import linear_model
+
+# About the warning of the a lot of images
+import matplotlib
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import pyfits
@@ -131,9 +136,14 @@ def coeff_plot2d(coeffs,N1,N2,ax=None,fig=None,orientation='vertical'):
       fig, ax = plt.subplots()
 
     ### INPUT VALIDATION NEEDS TO BE FILLED IN
+    coeffs_reshaped = None
 
-    coeffs_reshaped = np.abs(coeffs.reshape(N1,N2)) ## does not 
-    coeffs_reshaped /= coeffs_reshaped.max()
+    if (coeffs.shape != (N1,N2)):
+        coeffs_reshaped = np.abs(coeffs.reshape(N1,N2)) ## does not 
+    else:
+        coeffs_reshaped = coeffs
+
+   #coeffs_reshaped /= coeffs_reshaped.max()
     im = ax.imshow(coeffs_reshaped,cmap=cm.bwr,interpolation='none')
     
     # Force colorbars besides the axes
@@ -198,11 +208,11 @@ def plot_decomposition(cube, img_idx, size_X, size_Y, \
             +str(np.round(recovered_energy_fraction,4)))
     ax[1,0].set_title('Residual image - Frac. of energy = '\
             +str(np.round(residual_energy_fraction,4)))
-    ax[1,1].set_title('Rel. magnitude of coefficients')
+    ax[1,1].set_title('Magnitude of coefficients')
     fig.suptitle('Shapelet Basis decomposition')
     
     fig.tight_layout()
-    plt.savefig(Path, dpi=200)
+    plt.savefig(Path)
     plt.clf()
 
 def plot_solution(N1,N2,cube, img_idx,size_X, size_Y,\
@@ -257,14 +267,14 @@ def plot_solution(N1,N2,cube, img_idx,size_X, size_Y,\
     fig2.suptitle('Sparse decomposition from an semi-intelligent Dictionary')
 
     if (noise_scale == 0):
-        ax2[1,1].set_title('Rel. magnitude of coefficients - '+str(n_nonzero_coefs))
+        ax2[1,1].set_title('Magnitude of coefficients - '+str(n_nonzero_coefs))
     else:
         ax2[1,1].set_title('Rel. diff in magnitude ' \
-                + r'$\displaystyle \frac{N.C - O.C}{\left\lVert O.C \right\rVert_2}$'\
+                + r'$\displaystyle \left|\frac{N.C_i}{O.C_i} - 1 \right|$'\
                 + ' - ' + str(n_nonzero_coefs))
     
     fig2.tight_layout()
-    plt.savefig(Path, dpi=200)
+    plt.savefig(Path)
     plt.clf()
 
 def sparse_solver(D, signal, N1,N2, Num_of_shapelets = None):
@@ -294,7 +304,7 @@ def sparse_solver(D, signal, N1,N2, Num_of_shapelets = None):
     return sparse_coefs, sparse_reconst, sparse_residual, \
             residual_energy_fraction, recovered_energy_fraction, n_nonzero_coefs
 
-def solver_SVD(D, signal):
+def solver_SVD(D, n_nonzero, signal):
 
     """ Find appropriate coefficients for basis vectors contained in D, reconstruct image,
     calculate residual and residual and energy fraction using the Singular Value Decomposition
@@ -307,23 +317,26 @@ def solver_SVD(D, signal):
     rows_SVD, columns_SVD = np.shape(D)
     U, s, VT = linalg.svd(D, full_matrices = True, compute_uv = True)    
   
-    # In the docs it is said that the matrix returns V_transpose and not V 
+    ## Count in only n_nonzero signular values
+    s = s[-n_nonzero:]
+    
+    ## In the docs it is said that the matrix returns V_transpose and not V 
     V = VT.transpose() 
     
-    # Make 1 / sigma_i array, where sigma_i are the singular values obtained from SVD
+    ## Make 1 / sigma_i array, where sigma_i are the singular values obtained from SVD
     dual_s = 1./s
 
-    # Initialize diagonal matrices for singular values
+    ## Initialize diagonal matrices for singular values
     S = np.zeros(D.shape)
     S_dual = np.zeros(D.shape)
     
-    # Put singular values on the diagonal
+    ## Put singular values on the diagonal
     for i in xrange(len(s)):
         S[i,i] = s[i]
         S_dual[i,i] = dual_s[i]
     
     coeffs_SVD = np.dot(V, np.dot(S_dual.transpose(), np.dot(U.transpose(),signal)))
-    
+
     n_nonzero_coefs_SVD = np.count_nonzero(coeffs_SVD)
     reconstruction_SVD = np.dot(D,coeffs_SVD)
     residual_SVD = signal - reconstruction_SVD
@@ -342,11 +355,8 @@ def solver_lstsq(D, signal):
     @param signal original image
     """
     
-    coeffs_lstsq = linalg.lstsq(D, signal)[0] # For soe reason this is not he right shape? 
-    n_nonzero_coefs_lstsq = np.count_nonzero(coeffs_lstsq)
-    if(DEBUG):
-        print(np.shape(coeffs_lstsq), np.shape(D))
-        print(coeffs_lstsq)
+    coeffs_lstsq = linalg.lstsq(D, signal)[0]  
+    n_nonzero_coefs_lstsq = np.count_nonzero(coeffs_lstsq) 
     reconstruction_lstsq = np.dot(D,coeffs_lstsq)
     residual_lstsq = signal - reconstruction_lstsq
     residual_energy_fraction_lstsq = np.sum(residual_lstsq**2)/np.sum(signal**2)
@@ -379,11 +389,61 @@ def solver_lasso_reg(D, signal, alpha = None):
     return coeffs_lasso, reconstruction_lasso, residual_lasso, \
             residual_energy_fraction_lasso, recovered_energy_fraction_lasso, n_nonzero_coefs_lasso
 
-def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', image = None, \
-        coeff_0 = None, noise_scale = None, alpha_ = None, Num_of_shapelets = None, n_max = None):
+def asses_diff(new_coefs, old_coefs):
+    """
+    Calculate the relative difference in coefficients
+    """
+    diff_arr = np.zeros_like(old_coefs)
+    for i in xrange(len(old_coefs)):
+        if old_coefs[i] != 0:
+            diff_arr[i] = np.abs(new_coefs[i]/old_coefs[i] - 1.)
+        else:
+            diff_arr[i] = 0
+    return diff_arr
 
-    """ Do the shapelet decomposition
+def get_max_order(basis, n_max):
+    """
+    Calculating max order of shapelets included in order to get
+    a symmetric triangle
     
+    @param basis Basis of the decomp.
+    @param n_max Chosen max number by user
+    """
+
+    xy_max_order = lambda n: int(np.floor(np.sqrt(n) - 1))
+    polar_max_order = lambda n: int(np.floor( (-3 + np.sqrt(9 + 8*(n-1)))/2.))
+
+    if (basis == 'Polar'):
+        return polar_max_order(n_max)
+    elif (basis == 'XY') or (basis == 'Elliptical'):
+        return xy_max_order(n_max)
+    else:
+        pass
+
+def sum_max_order(basis, n):
+    """
+    Given the maximum order of shapelet included
+    calculate how many combinations of shapelets there are
+    """
+
+    if (basis == 'Polar'):
+        return n*(n+1)/2 + n + 1
+    if (basis == 'XY') or (basis == 'Elliptical'):
+        return n*(n+1) + n + 1
+
+def shapelet_decomposition(image_data,\
+        f_path = '/home/',\
+        N1=20,N2=20, basis = 'XY', solver = 'sparse', image = None, \
+        coeff_0 = None, noise_scale = None, alpha_ = None, Num_of_shapelets = None, n_max = None,\
+        column_number = 1.01, plot_decomp= False, \
+        q = 1., theta = np.pi/4.):
+
+    """ 
+    Do the shapelet decomposition
+    
+    @param image_data Array / mutable object in python, just to store centroid values and sigma
+                      of the noiseless image for the future decomp.
+    @param f_path Path variable for saving the image decomp.
     @param N1,N2 n and m quantum numbers respectively
     @param basis do decomposition in this basis
         -- XY - Standard Descartes coordinate shapelet space
@@ -400,9 +460,15 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', image =
     @param alpha_ Scalar factor in fron of the l_1 norm in the lasso_regularization method
     @param Num_of_shapelets Number which refers to maximum allowed number for OMP method to use
     @param n_max This nubmer refers to the maximum order of shapelets that could be used in decomp.
+    @param column_number Just used for making distinction for images noised by differend matrices
+    @param plot_decomp Should the plot_solution and plot_decomposition be used or not
+    @param q Axis ratio for elliptical coordinates, defined as q = b / a
+    @param theta Direction angle of the ellipse
+
+    @returns reconstructed image and coefficients of the selected method along with labels of shapelets
     """
 
-    # Obtaining galaxy images
+    ## Obtaining galaxy images
     if (image == None) or (noise_scale == 0):
         cube = pyfits.getdata('../../data/cube_real.fits')
         cube_noiseless = pyfits.getdata('../../data/cube_real_noiseless.fits')
@@ -411,8 +477,8 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', image =
         size_X = 78; size_Y = 78
         pick_an_img = [91]
     else:
-        # Added this part for stability test with noise
-        # Background is zero because I already substracted background in the first decomp
+        ## Added this part for stability test with noise
+        ## Background is zero because I already substracted background in the first decomp
         size_X = np.shape(image)[0]; size_Y = np.shape(image)[1]
         noise_img = noise_scale * np.random.rand(size_X, size_Y)
         image = image + noise_img
@@ -429,17 +495,34 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', image =
 
     X = np.linspace(0,size_X-1,size_X)  
     Y = np.linspace(0,size_Y-1,size_Y)
-    
+
     for img_idx in pick_an_img:
 
-        #Take the image, reduce for background, find moments set n_max
+        ## Take the image, reduce for background, find moments set n_max
 
         cube[img_idx] -= background
         img = galsim.Image(cube[img_idx],xmin=0,ymin=0)
-        shape = img.FindAdaptiveMom()
-        x0,y0 = shape.moments_centroid.x, shape.moments_centroid.y ## possible swap b/w x,y
-        sigma = shape.moments_sigma
+        
+        ## Here catch an exception and exit the function if the FindAdaptiveMom doesn't converge
+        try:
+            shape = img.FindAdaptiveMom() #strict = False, watch out for failure, try block
+        except RuntimeError as error:
+            print("RuntimError: {0}".format(error))
+            return None, None,None
+        
+        ## Remember this from the 0 noise image
+        if noise_scale == 0:
+            x0,y0 = shape.moments_centroid.x, shape.moments_centroid.y ## possible swap b/w x,y
+            sigma = shape.moments_sigma
+            image_data[0] = x0; image_data[1] = y0; image_data[2] = sigma
+        else:
+            x0 = image_data[0]
+            y0 = image_data[1]
+            sigma = image_data[2]
+
         if n_max == None:
+            ## So that it is a complete triangle
+            ## Formula for a symmetric triangle is n * (n+2)
             n_max = 20
 
         #Make a meshgrid for the polar shapelets
@@ -463,50 +546,61 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', image =
 
             k_p = 0
             polar_basis = 'refregier' 
+            label_arr = []
 
-            for n in xrange(N1):
+            ## For symmetric coeffs triangle solve
+            ## n^2 + 2n + 2 = 2n_max, positive solution, such that
+            ## Sum(i+1)_{i in [0,n]} <= n_max
+                        
+            for n in xrange(get_max_order(basis,n_max)):
                 for m in xrange(-n,n+1,2):
                     
-                    # n_max - defined as:
-                    # theta_max (galaxy size) / theta_min (smallest variation size) - 1 
+                    ## n_max - defined as:
+                    ## theta_max (galaxy size) / theta_min (smallest variation size) - 1  
+
+                    if noise_scale==0:
+                        label_arr.append(str("(%d, %d)" % (n,m)))
                     
-                    if (n <= n_max): 
-                        if (polar_basis == 'refregier'):
-                            arr_res = \
-                                    p_shapelet.polar_shapelets_refregier(n,m,sigma)(R,Phi).flatten() 
-                            arr = arr_res
-                            arr_im = arr_res.imag
-                        elif (polar_basis == 'berry'):
-                            arr_res = p_shapelet.polar_shapelets_berry(n,m,sigma)(R,Phi).flatten()
-                            arr = arr_res 
-                            arr_im = arr_res.imag
-                        # Make the basis matrix D
-                        D[:,k_p] = arr_res 
-                        k_p += 1
-                        
-                        # Calculate the norms of basis vectors and coefficients
-                        arr_norm2_res = np.dot(arr_res,arr_res)
-                        arr_norm2 = np.dot(arr, arr)
-                        arr_norm_im2 = np.dot(arr_im, arr_im)
-                        coef_r = np.dot(arr,signal)
-                        coef_im = np.dot(arr_im, signal)
-                        coef_res= np.dot(arr_res, signal)
+                    if (polar_basis == 'refregier'):
+                        arr_res = \
+                                p_shapelet.polar_shapelets_refregier(n,m,sigma)(R,Phi).flatten() 
+                        arr = arr_res
+                        arr_im = arr_res.imag
+                    elif (polar_basis == 'berry'):
+                        arr_res = p_shapelet.polar_shapelets_berry(n,m,sigma)(R,Phi).flatten()
+                        arr = arr_res 
+                        arr_im = arr_res.imag
+                    ## Make the basis matrix D
+                    D[:,k_p] = arr_res 
+                    k_p += 1
+                    
+                    ## Calculate the norms of basis vectors and coefficients
+                    arr_norm2_res = np.dot(arr_res,arr_res)
+                    arr_norm2 = np.dot(arr, arr)
+                    arr_norm_im2 = np.dot(arr_im, arr_im)
+                    coef_r = np.dot(arr,signal)
+                    coef_im = np.dot(arr_im, signal)
+                    coef_res= np.dot(arr_res, signal)
 
-                        # Add coefficients to basis_coefs array for later use
-                        # Make the shapelet reconstruction
-                        if (coef_im==0) or (coef_r==0): 
-                            base_coefs[n,m]=0 
-                        else: 
-                            base_coefs[n,m] = coef_res/np.sqrt(arr_norm2_res)
-                            shapelet_reconst = shapelet_reconst \
-                                    + coef_res*arr_res/arr_norm2_res
-                    else: break
+                    ## Add coefficients to basis_coefs array for later use
+                    ## Make the shapelet reconstruction
+                    if (coef_im==0) or (coef_r==0): 
+                        base_coefs[n,m]=0 
+                    else: 
+                        base_coefs[n,m] = coef_res/np.sqrt(arr_norm2_res)
+                        shapelet_reconst = shapelet_reconst \
+                                + coef_res*arr_res/arr_norm2_res
         elif(basis == 'XY'):
-
+            
+             label_arr = []
              for k in xrange(N1*N2):
                 m,n = k/N1, k%N1 
-                if (m+n <= n_max): 
-                    
+                ## For symmetric coeffs / complete triangle
+                ## such that Sum(2*i + 1)_{i in [0,n]} <= n_max
+                ## solve n^2 + 2*n = n_max                 
+                if (m+n <= get_max_order(basis,n_max)): 
+                    if noise_scale==0:
+                        label_arr.append(str("(%d, %d)" % (n,m)))
                     arr = shapelet2d(m,n,x0=x0,y0=y0,sx=sigma,sy=sigma)(X,Y).flatten() 
                     D[:,k] = arr
                     arr_norm2 = np.dot(arr, arr)
@@ -516,9 +610,29 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', image =
                     else: 
                         base_coefs[n,m] = coef/np.sqrt(arr_norm2)                        
                         shapelet_reconst = shapelet_reconst + (coef*arr)/arr_norm2 
-                else: break
         elif(basis == 'Elliptical'):
-            
+            ## Params of ellipse (major and minor) defined throug:
+            ## P_ellipse = P_circle, i.e. beta^2 = ab, and with provided ratio q = b/a
+            a = sigma / np.sqrt(q)
+            b = sigma * np.sqrt(q)
+            label_arr =[]
+            for k in xrange(N1*N2):
+                m,n = k/N1, k%N1
+                if (m+n <= get_max_order(basis,n_max)): 
+                    if noise_scale == 0:
+                        label_arr.append(str("(%d, %d)" % (n,m)))
+                    arr = elliptical_shapelet(m,n,x0,y0, sx=a, sy=b, theta = theta)(X,Y).flatten()
+                    D[:, k] = arr
+                    arr_norm2 = np.dot(arr,arr)
+                    coef = np.dot(arr,signal)
+                    if(coeff==0):
+                        base_coefs[n,m] =0
+                    else:
+                        base_coefs[n,m] = coef/np.sqrt(arr_norm2)
+                        shapelet_reconst = shapelet_reconst + (coef*arr)/arr_norm2
+        elif(basis == 'Compound'):
+            ## Just put different betas (range TBD) basis into a big basis matrix 
+            ## let the algorithms pick the weights. Watch out that the order stays symmetric
             pass
 
         residual= signal - shapelet_reconst
@@ -530,22 +644,34 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', image =
                 (np.sum(base_coefs**2))/(np.sum(signal**2)), \
                 (np.sum(residual**2)/np.sum(signal**2)) 
 
-        # Make the strings for nice representation in the output
+        ## Make the strings for nice representation in the output
         noise_scale_str = str("%.3e" % (noise_scale))
-        alpha_str = str("%.3e" % (alpha_))
+        if (alpha_ != None):
+            alpha_str = str("%.3e" % (alpha_))
 
-        mkdir_p('Plots/Decomp/')
-        plot_decomposition(cube, img_idx, size_X, size_Y, \
-                base_coefs, N1, N2, shapelet_reconst, signal, \
-                residual, residual_energy_fraction ,recovered_energy_fraction, \
-                'Plots/Decomp/'+ solver+ '_' + basis +'_'+noise_scale_str +'_'\
-                +str(n_max) + '_.png')
+        mkdir_p(f_path + 'Decomp/')
+        if (plot_decomp == True) and (basis != 'Polar'):
+            
+            ## Check if there is already the XY decomp
+            if os.path.isfile(f_path + \
+                    'Decomp/'+ solver+ '_' + basis +'_'\
+                    +str(n_max) + '_' + str(column_number) +'_.png') == False:
+                
+                plot_decomposition(cube, img_idx, size_X, size_Y, \
+                        base_coefs, N1, N2, shapelet_reconst, signal, \
+                        residual, residual_energy_fraction ,recovered_energy_fraction, \
+                        f_path + 'Decomp/'+ solver+ '_' + basis +'_'\
+                        +str(n_max) + '_' + str(column_number) +'_.png')
 
-        # Sparse solver
+        ## Sparse solver
         if (solver == 'sparse'):
             
             if Num_of_shapelets == None:
                 Num_of_shapelets = 10
+
+            ## Include symmetric number of shapelets
+            ## symmetrize the number chosen
+            Num_of_shapelets = sum_max_order(basis,(get_max_order(basis,Num_of_shapelets))) 
 
             sparse_coefs, sparse_reconst, sparse_residual, \
                 residual_energy_fraction, recovered_energy_fraction, \
@@ -554,44 +680,47 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', image =
             if (noise_scale == 0):
                 sparse_coefs_plot = sparse_coefs
             else:
-                sparse_coefs_plot = (sparse_coefs - coeff_0)/linalg.norm(coeff_0)
+                sparse_coefs_plot = asses_diff(sparse_coefs,coeff_0)
 
             # Make a dir for storage of decompositions 
-            mkdir_p('Plots/Sparse/'+str(Num_of_shapelets) + '/')
+            mkdir_p(f_path + 'Sparse/'+str(Num_of_shapelets) +'_'+basis + '/')
 
-            plot_solution(N1,N2,cube,img_idx,size_X,size_Y, \
-                    sparse_reconst, sparse_residual, sparse_coefs,\
+            if plot_decomp == True:
+                plot_solution(N1,N2,cube,img_idx,size_X,size_Y, \
+                    sparse_reconst, sparse_residual, sparse_coefs_plot,\
                     recovered_energy_fraction, residual_energy_fraction, n_nonzero_coefs, \
                     noise_scale, \
-                    'Plots/Sparse/'+ str(Num_of_shapelets) + '/Sparse_solution_'\
+                    f_path + 'Sparse/'+ str(Num_of_shapelets) + '_'+ basis+'/Sparse_solution_'\
                     +noise_scale_str+'_'+str(N1)+'_'+str(N2)+'_'+str(n_max)+'_'+basis+'_'\
-                    +str(Num_of_shapelets)+'_.png')
+                    +str(Num_of_shapelets)+'_'+ str(column_number) +'_.png')
 
-            return sparse_reconst.reshape(size_X,size_Y), sparse_coefs   
+            return sparse_reconst.reshape(size_X,size_Y), sparse_coefs,label_arr   
 
         # SVD solver // following berry approach
         if (solver == 'SVD'):
             
             coeffs_SVD, reconstruction_SVD, residual_SVD, \
             residual_energy_fraction_SVD, recovered_energy_fraction_SVD, \
-            n_nonzero_coefs_SVD = solver_SVD(D, signal)
+            n_nonzero_coefs_SVD = solver_SVD(D, n_max, signal)
             
             if (noise_scale == 0):
                 SVD_coefs_plot = coefs_SVD
             else:
-                SVD_coefs_plot = (coefs_SVD - coeff_0)/linalg.norm(coeff_0)
+                SVD_coefs_plot = asses_diff(coefs_SVD,coeff_0)
 
             # Make a dir for storage of decomp.
-            mkdir_p('Plots/SVD/')
+            mkdir_p(f_path + 'SVD/')
 
-            plot_solution(N1,N2,cube, img_idx,size_X,size_Y, \
+            if plot_decomp == True:
+                plot_solution(N1,N2,cube, img_idx,size_X,size_Y, \
                     reconstruction_SVD, residual_SVD, SVD_coefs_plot, \
                     recovered_energy_fraction_SVD, residual_energy_fraction_SVD, \
                     n_nonzero_coefs_SVD, noise_scale, \
-                    'Plots/SVD/SVD_solution_' \
-                     +noise_scale_str+'_'+str(N1)+'_'+str(N2)+'_'+str(n_max)+'_'+basis+'_.png')
+                    f_path + 'SVD/SVD_solution_' \
+                     +noise_scale_str+'_'+str(N1)+'_'+str(N2)+'_'+str(n_max)+'_'+basis+'_'\
+                     + str(column_number) +'_.png')
             
-            return reconstruction_SVD.reshape(size_X,size_Y), coeffs_SVD
+            return reconstruction_SVD.reshape(size_X,size_Y), coeffs_SVD, label_arr
             
 
         #Ordinary least squares solver
@@ -604,21 +733,23 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', image =
             if (noise_scale == 0):
                 lstsq_coefs_plot = coeffs_lstsq 
             else:
-                lstsq_coefs_plot = (coeffs_lstsq - coeff_0)/linalg.norm(coeff_0)
+                lstsq_coefs_plot = asses_diff(coeffs_lstsq, coeff_0)
 
             # Make a dir for storage of decomp.
-            mkdir_p('Plots/Lstsq/')
+            mkdir_p(f_path + 'Lstsq/')
 
-            plot_solution(N1,N2,cube, img_idx,size_X,size_Y,  \
+            if plot_decomp == True:
+                plot_solution(N1,N2,cube, img_idx,size_X,size_Y,  \
                     reconstruction_lstsq, residual_lstsq, \
                     lstsq_coefs_plot, \
                     recovered_energy_fraction_lstsq, residual_energy_fraction_lstsq, \
                     n_nonzero_coefs_lstsq, noise_scale, \
-                    'Plots/Lstsq/lstsq_solution_'\
-                    +noise_scale_str+'_'+str(N1)+'_'+str(N2)+'_'+str(n_max)+'_'+basis+'_.png')
+                    f_path + 'Lstsq/lstsq_solution_'\
+                    +noise_scale_str+'_'+str(N1)+'_'+str(N2)+'_'+str(n_max)+'_'+basis+'_'\
+                    +str(column_number)+'_.png')
             
             
-            return reconstruction_lstsq.reshape(size_X,size_Y), coeffs_lstsq
+            return reconstruction_lstsq.reshape(size_X,size_Y), coeffs_lstsq,label_arr
         
         if (solver == 'lasso'): #This is with the Lasso regularization
             
@@ -632,170 +763,412 @@ def shapelet_decomposition(N1=20,N2=20, basis = 'XY', solver = 'sparse', image =
             if (noise_scale == 0):
                 lasso_coefs_plot = coeffs_lasso
             else:
-                lasso_coefs_plot = (coeffs_lasso - coeff_0)/linalg.norm(coeff_0)
+                lasso_coefs_plot = asses_diff(coeffs_lasso, coeff_0)
                 
             # Make a dir for storage of decomp.
-            mkdir_p('Plots/Lasso/'+alpha_str+'/')
+            mkdir_p(f_path + 'Lasso/'+alpha_str+'/')
             
-            plot_solution(N1,N2,cube, img_idx,size_X,size_Y,  \
+            if plot_decomp == True:
+                plot_solution(N1,N2,cube, img_idx,size_X,size_Y,  \
                         reconstruction_lasso, residual_lasso, \
                         lasso_coefs_plot, \
                         recovered_energy_fraction_lasso, residual_energy_fraction_lasso, \
                         n_nonzero_coefs_lasso, noise_scale, \
-                        'Plots/Lasso/' + alpha_str + '/lasso_solution_'\
+                        f_path + 'Lasso/' + alpha_str + '/lasso_solution_'\
                         +noise_scale_str+ '_' + str(N1)+'_'+str(N2)+'_'+str(n_max)+'_'+basis+'_'\
-                        +alpha_str+'_.png')
+                        +alpha_str+'_'+ str(column_number) +'_.png')
 
-            return reconstruction_lasso.reshape(size_X, size_Y), coeffs_lasso
+            return reconstruction_lasso.reshape(size_X, size_Y), coeffs_lasso, label_arr
 
-def plot_stability(coeff_stability, coeff_0, N1, N2, noise_scale, \
+def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
+        n_max = 20, label_arr = None, signal_to_noise = None, \
+        basis = 'Polar', solver = 'lasso', \
         fname_imag = 'Plots/Lasso/Stability/',\
-        variance_file = 'Plots/Lasso/Stability/',\
+        variance_folder = 'Plots/Lasso/Stability/',\
         mid_word = None):
     
-    # Find the mean coefficients
-    coeff_stability = (coeff_stability/len(noise_scale) - coeff_0)\
-            /linalg.norm(coeff_0)
+    """
+    Plot the stability matrices and variance matrices for selected solver method
+    """
+    ## Initialize the stability and variance arrays
+    coeff_stability_res = np.zeros(coeff_stability.shape[0])
+    variance = np.zeros(coeff_stability.shape[0])
+    variance_sqrt = np.zeros(coeff_stability.shape[0])
+    tmp = np.zeros(noise_img_num)
 
-    image_stability = coeff_stability.reshape((2*N1,2*N2))
+    ## Find the mean coefficients and the variance
+    ## <N.C>_i and Var(N.C_i)
+    for i in xrange(coeff_stability.shape[0]):
+        for j in xrange(noise_img_num):
+            coeff_stability_res[i] += coeff_stability[i,j]
+            tmp[j] = coeff_stability[i,j]
+        coeff_stability_res[i] = coeff_stability_res[i]/noise_img_num
+        variance_sqrt[i] = np.sqrt(np.var(tmp))
+        if coeff_stability_res[i] != 0:
+            variance[i] = np.sqrt(np.var(tmp))/np.abs(coeff_stability_res[i])
+        else:
+            variance[i] = 0
+    ## Asses the difference
+    ## |<N.C>_i / O.C_i - 1|
+    for i in xrange(len(coeff_stability_res)):
+        if coeff_0[i] != 0:
+            coeff_stability_res[i] = np.abs(coeff_stability_res[i]/coeff_0[i] - 1)
+        else:
+            coeff_stability_res[i] = 0
 
+    ## Add the scatter plot
+    ## How many points to plot  
+    n_max = sum_max_order(basis, get_max_order(basis,n_max))    
+    n_nonzero = np.count_nonzero(coeff_stability_res)
+    n_nonzero = sum_max_order(basis,get_max_order(basis, n_nonzero))
+
+    if n_max <= n_nonzero:
+        N_plot = n_max
+    else:
+        N_plot = n_nonzero
+
+    ## Take into account only n_max biggest coefs
+    ## If n_max > len(coeff_stability_res) it returns all indices
+    ## sorted in descending order in respect to the values of the array
+    ## AND check if some of them is zero
+   
+    coeff_res_r = coeff_stability_res[:N_plot]
+    variance_sqrt_r = variance_sqrt[:N_plot]
+    label_arr_r = np.asarray(label_arr)
+    label_arr_r = label_arr[:N_plot]
+
+    arange_x = np.arange(N_plot)
+    
+    fig_scat, ax_scat = plt.subplots()
+    plt.errorbar(arange_x, coeff_res_r, yerr=variance_sqrt_r, fmt='bo', \
+            label='Coeff. value')
+    plt.xticks(arange_x, label_arr_r)
+    plt.title('Scatter plot of first %d coefs' % (N_plot))
+    plt.legend(loc = 'best')
+    plt.setp(ax_scat.get_xticklabels(),rotation=90, horizontalalignment = 'right')
+    ax_scat.tick_params(axis='x', which ='both', pad = 10)
+    
+    ## Set the font of the ticks
+    for tick in ax_scat.xaxis.get_major_ticks():
+        tick.label.set_fontsize(7)
+    for tick in ax_scat.xaxis.get_minor_ticks():
+        tick.label.set_fontsize(7)
+
+    mkdir_p(fname_imag)
+    plt.savefig(fname_imag + solver + '_' + mid_word + "_scatter_coefs.png")
+    plt.clf()
+
+    ## Add the stability plot 
     fig, ax = plt.subplots()
     
-    coefs = coeff_stability.reshape(2*N1,2*N2)
+    coefs = coeff_stability_res.reshape(2*N1,2*N2)
     coeff_plot2d(coefs,N1*2,N2*2,ax=ax,fig=fig) 
     
-    # Add LaTeX parsing
-    #plt.rc('text', usetex=True)
-    #plt.rc('font', **{'family' : "sans-serif"})
-    #params = {'text.latex.preamble' : [r'\usepackage{siunitx}', \
-    #            r'\usepackage[utf8]{inputenc}', r'\usepackage{amsmath}']}
-    #plt.rcParams.update(params)
-    
+    str_s_to_n = str("%.3e" % (signal_to_noise)) 
+
     ax.grid(lw=2)
     ax.set_title('Stability of coefs '\
-            + r'$\displaystyle \frac{<N.C> - O.C}{\left\lVert O.C \right\rVert_2}$' \
+            + r'$\displaystyle \left|\frac{<N.C.>_i}{O.C._i} - 1\right|$' \
             + '\n' \
-            + 'N.C is averaged over the number of noise realizations')
+            + 'N.C is averaged over the number of noise realizations' \
+            + '\n' \
+            + 'S/N = ' + str_s_to_n)
 
     mkdir_p(fname_imag)
     
     fig.tight_layout()
-    plt.savefig(fname_imag + 'stability_'+mid_word+'_.png', dpi = 200)
+    plt.savefig(fname_imag + solver + '_stability_'+mid_word+'_'+str_s_to_n+'_.png')
     plt.clf()
 
-    # Calculate the variance of decompositions
-    variance = np.var(\
-            (coeff_stability/len(noise_scale) - coeff_0) \
-            /linalg.norm(coeff_0))
+    ## Calculate the relative variance of decompositions
+    ## Coeff_stability is already in the needed form
+    ## variance_i = Var(N.C_i)
     
-    mkdir_p(variance_file + mid_word + '/')
+    fig_var, ax_var = plt.subplots()
     
-    variance_file = open(variance_file + mid_word+'/' + 'variance.txt', 'w')
-    variance_file.write("%.5f\n" % (variance))
+    var_mat = variance.reshape(2*N1,2*N2)
+    coeff_plot2d(var_mat,N1*2,N2*2,ax=ax_var,fig=fig_var) 
+       
+    ax_var.grid(lw=2)
+    ax_var.set_title('Variance matrix '\
+            + r'$\displaystyle \sqrt{Var\left(N.C._i\right)} / |\left< N.C._i\right>|$' \
+            + '\n' \
+            + 'S/N = ' + str_s_to_n)
+    
+    fig_var.tight_layout()
+    
+    mkdir_p(variance_folder)
+    plt.savefig(variance_folder + solver + '_variance_rel_'+mid_word+'_'+str_s_to_n+'_.png')
+    plt.clf()
+    
+    ## Just the variance image
+    fig_var, ax_var = plt.subplots()
+    
+    var_mat_sqrt = variance_sqrt.reshape(2*N1,2*N2)
+    coeff_plot2d(var_mat_sqrt,N1*2,N2*2,ax=ax_var,fig=fig_var) 
+       
+    ax_var.grid(lw=2)
+    ax_var.set_title('Variance matrix '\
+            + r'$\displaystyle \sqrt{Var\left(N.C._i\right)}$' \
+            + '\n' \
+            + 'S/N = ' + str_s_to_n)
+    
+    fig_var.tight_layout()
+    
+    mkdir_p(variance_folder)
+    plt.savefig(variance_folder + solver + '_variance_sqrt_'+mid_word+'_'+str_s_to_n+'_.png')
+    plt.clf()
 
-def test_stability(solver, basis, noise_scale, alpha_ = None, Num_of_shapelets_array = None):
-    
+def test_stability(solver, basis, \
+        noise_scale, noise_img = None, noise_img_num = 10,\
+        size_X = 78, size_Y = 78, \
+        alpha_ = None, Num_of_shapelets_array = None):
+
+    ## Import the util package for the weights
+    import galsim
+    from utils.get_gaussian_weight_image import get_gaussian_weight_image as gen_weight_image
+
+    ## Initialize values
     N1 = 20; N2=20; n_max = 20; Num_of_shapelets = None; alpha = None
     
     image = None; image_curr = None; coeffs_0 = None; coeffs_curr = None; coeff_stability = None
+    
+    image_data = np.zeros(3)
 
-    # Now select alphas if the method is lasso
+    ## Now select alphas if the method is lasso
     if solver == 'lasso':
-        for l in range(len(alpha_)):
+        for l in xrange(len(alpha_)):
             
             alpha = alpha_[l]
-            # Iterate through different noise scales
-            # image - image to be decomposed
-            # image_curr - temporary storage for decomposed image
+            ## Iterate through different noise scales
+            ## image - image to be decomposed
+            ## image_curr - temporary storage for decomposed image
             
-            image, coeff_0 =\
-                        shapelet_decomposition(N1,N2,basis,solver,\
-                        None, None, 0,\
-                        alpha,\
-                        n_max = n_max)
-
-            coeff_stability = np.zeros_like(coeff_0)
+            # Make the no noise image
+            f_path = 'Plots/' + str("%.3e" % (0.0)) + '/'
+            mkdir_p(f_path)
             
-            for noise in noise_scale:
-                image_curr, coeffs_curr =\
-                        shapelet_decomposition(N1,N2,basis,solver,\
-                        image, coeff_0, noise,\
-                        alpha,\
-                        n_max = n_max)
-                coeff_stability += coeffs_curr
+            image, coeff_0, label_arr  =\
+                        shapelet_decomposition(image_data,\
+                        f_path = f_path,\
+                        N1=N1,N2=N2,basis=basis,solver=solver,\
+                        image=None, coeff_0 =None, noise_scale=0,\
+                        alpha_=alpha,\
+                        n_max = n_max,\
+                        plot_decomp = True)
 
-            plot_stability(coeff_stability, coeff_0, N1, N2, noise_scale, \
-                    fname_imag = 'Plots/Lasso/Stability/',\
-                    variance_file = 'Plots/Lasso/Stability/',\
-                    mid_word = str("%.3e" % (alpha))+'_'+str(basis))
+            ## If the initial decomposition doesn't fail continue
+            if (image != None):
+                ## The matrix to be used for stability calculations
+                ## Variance and mean difference
+                coeff_stability = np.zeros((len(coeff_0),noise_img_num))
+                
+                ## A sample image used for the S/N calculation
+                image_sample = image + noise_scale*noise_img[:,0].reshape(size_X,size_Y)
+                
+                ## Asses the weights and calculate S/N
+                weight_image,flag = gen_weight_image(image_sample)
+                
+                if flag == 1:
+                    weight_image = weight_image.flatten()
+                    signal_image = image_sample.flatten()
+                    
+                    signal_to_noise = (1./noise_scale) * np.dot(weight_image,signal_image) \
+                            / np.sum(weight_image)
+                    
+                    ## Make folders for storage
+                    f_path = 'Plots/' + str("%.3e" % (noise_scale)) + '/'
+                    mkdir_p(f_path)
+
+                    k = 0
+                    for i in xrange(noise_img_num): 
+                        
+                        ## Add the noise_matrix to the 0 noise image
+                        image += noise_scale*noise_img[:,i].reshape(size_X,size_Y)
+                        
+                        image_curr, coeffs_curr, foo =\
+                                shapelet_decomposition(image_data,\
+                                f_path = f_path,\
+                                N1=N1,N2=N2,basis=basis,solver=solver,\
+                                image=image, coeff_0=coeff_0, noise_scale=signal_to_noise,\
+                                alpha_=alpha,\
+                                n_max = n_max,\
+                                plot_decomp=True,\
+                                column_number = i)
+                        
+                        ## Because of lack of convergence of AdaptiveMom of galsim
+                        ## Check for None returns and append only if it is != 0
+                        if coeffs_curr != None:
+                                coeff_stability[:,k] = coeffs_curr
+                                k += 1
+
+                    plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
+                            n_max = n_max, label_arr = label_arr, signal_to_noise = signal_to_noise, \
+                            basis = basis, solver = solver, \
+                            fname_imag = f_path + 'Stability/',\
+                            variance_folder = f_path + 'Stability/',\
+                            mid_word = str("%.3e" % (alpha))+'_'+str(basis))
              
     elif(solver == 'sparse'):
         
         # Select number of shapelets that would be selected by OMP
-        for c in range(len(Num_of_shapelets_array)):
+        for c in xrange(len(Num_of_shapelets_array)):
             Num_of_shapelets = Num_of_shapelets_array[c]
             
-            # Initialize the image for decomposition
-            image, coeff_0=\
-                shapelet_decomposition(N1,N2,basis,solver,\
-                None, None, 0,\
-                alpha,\
-                Num_of_shapelets, n_max)
-            
-            coeff_stability = np.zeros_like(coeff_0)
-            # Iterate through different noise scales
-            # image - image to be decomposed
-            # image_curr - temporary storage for decomposed image
-            for noise in noise_scale:
-                image_curr, coeffs_curr =\
-                        shapelet_decomposition(N1,N2,basis,solver,\
-                        image, coeff_0, noise,\
-                        Num_of_shapelets = Num_of_shapelets, n_max = n_max)
-                coeff_stability += coeffs_curr
-            
-            plot_stability(coeff_stability, coeff_0, N1, N2, noise_scale, \
-                    fname_imag = 'Plots/Sparse/Stability/',\
-                    variance_file = 'Plots/Sparse/Stability/',\
-                    mid_word = str(Num_of_shapelets) + '_' + str(basis))         
+            # Make the no noise image
+            f_path = 'Plots/' + str("%.3e" % (0.0)) + '/'
+            mkdir_p(f_path)
+
+            image, coeff_0, label_arr =\
+                        shapelet_decomposition(image_data,\
+                        f_path = f_path,\
+                        N1=N1,N2=N2,basis=basis,solver=solver,\
+                        image=None, coeff_0=None, noise_scale=0,\
+                        Num_of_shapelets=Num_of_shapelets, \
+                        plot_decomp = True,\
+                        n_max = n_max)
+                        
+            ## If 0 noise decomp. fails don't do anything
+            if (image != None):
+                ## The matrix to be used for stability calculations
+                ## Variance and mean difference
+                coeff_stability = np.zeros((len(coeff_0),noise_img_num))
+                
+                ## A sample image used for the S/N calculation
+                image_sample = image + noise_scale*noise_img[:,0].reshape(size_X,size_Y)
+                
+                ## Asses the weights and calculate S/N
+                weight_image,flag = gen_weight_image(image_sample)
+                
+                if flag == 1:
+                    weight_image = weight_image.flatten()
+                    signal_image = image_sample.flatten()
+
+                    signal_to_noise = (1./noise_scale) * np.dot(weight_image,signal_image) \
+                            / np.sum(weight_image)
+                    
+                    ## Make folders for storage
+                    f_path = 'Plots/' + str("%.3e" % (noise_scale)) + '/'
+                    mkdir_p(f_path)
+                    
+                    k=0
+                    for i in xrange(noise_img_num):
+                                        
+                        ## Add the noise_matrix to the 0 noise image
+                        image += noise_scale*noise_img[:,i].reshape(size_X,size_Y)
+                        
+                        image_curr, coeffs_curr, foo =\
+                                shapelet_decomposition(image_data,\
+                                f_path = f_path,\
+                                N1=N1,N2=N2,basis=basis,solver=solver,\
+                                image=image, coeff_0=coeff_0, noise_scale=signal_to_noise,\
+                                Num_of_shapelets = Num_of_shapelets,\
+                                plot_decomp = True,\
+                                n_max = n_max,\
+                                column_number = i)
+                        
+                        if coeffs_curr != None:
+                            coeff_stability[:,k] = coeffs_curr
+                            k+=1
+
+                    plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
+                            n_max = n_max, label_arr = label_arr, signal_to_noise = signal_to_noise, \
+                            basis = basis, solver = solver, \
+                            fname_imag = f_path + 'Stability/',\
+                            variance_folder = f_path + 'Stability/',\
+                            mid_word = str(sum_max_order(basis,get_max_order(basis,Num_of_shapelets))) + '_' + str(basis))           
             
     elif(solver == 'lstsq'):
-        image, coeff_0 =\
-                shapelet_decomposition(N1,N2,basis,solver,\
-                None, None, 0,\
-                alpha,\
-                Num_of_shapelets, n_max)
-
-        coeff_stability = np.zeros_like(coeff_0)
-        # Iterate through different noise scales
-        # image - image to be decomposed
-        # image_curr - temporary storage for decomposed image
-        for noise in noise_scale:
-            image_curr, coeffs_curr =\
-                    shapelet_decomposition(N1,N2,basis,solver,\
-                    image, coeff_0, noise,\
-                    n_max = n_max)
-            coeff_stability += coeffs_curr
         
-        plot_stability(coeff_stability, coeff_0, N1, N2, noise_scale, \
-                fname_imag = 'Plots/Lstsq/Stability/',\
-                variance_file = 'Plots/Lstsq/Stability/',\
-                mid_word = str(n_max) + '_' + str(basis))
+        # Make the no noise image
+        f_path = 'Plots/' + str("%.3e" % (0.0)) + '/'
+        mkdir_p(f_path)
 
+        image, coeff_0, label_arr =\
+                    shapelet_decomposition(image_data,\
+                    f_path = f_path,\
+                    N1=N1,N2=N2,basis=basis,solver=solver,\
+                    image = None,coeff_0= None, noise_scale=0,\
+                    n_max = n_max,\
+                    plot_decomp = True)
+
+        if image!=None:
+            # The matrix to be used for stability calculations
+            # Variance and mean difference
+            coeff_stability = np.zeros((len(coeff_0),noise_img_num))
+            
+            ## A sample image used for the S/N calculation
+            image_sample = image + noise_scale*noise_img[:,0].reshape(size_X,size_Y)
+            ## Asses the weights and calculate S/N
+            weight_image,flag = gen_weight_image(image_sample)
+            
+            if flag == 1:    
+                weight_image = weight_image.flatten()
+                signal_image = image_sample.flatten()
+
+                signal_to_noise = (1./noise_scale) * np.dot(weight_image,signal_image) \
+                        / np.sum(weight_image)
+                
+                ## Make folders for storage
+                f_path = 'Plots/' + str("%.3e" % (noise_scale)) + '/'
+                mkdir_p(f_path)
+
+                k=0
+                for i in xrange(noise_img_num):
+                                
+                    ## Add the noise_matrix to the 0 noise image
+                    image += noise_scale*noise_img[:,i].reshape(size_X,size_Y)
+                    
+                    image_curr, coeffs_curr, foo =\
+                            shapelet_decomposition(image_data,\
+                            f_path = f_path,\
+                            N1=N1,N2=N2,basis=basis,solver=solver,\
+                            image=image, coeff_0=coeff_0, noise_scale=signal_to_noise,\
+                            n_max = n_max,\
+                            plot_decomp = True,\
+                            column_number = i)
+
+                    if coeffs_curr != None:
+                        coeff_stability[:,k] = coeffs_curr
+                        k+=1
+
+                plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
+                        n_max = n_max, label_arr = label_arr, signal_to_noise = signal_to_noise,\
+                        basis = basis, solver = solver, \
+                        fname_imag = f_path + 'Stability/',\
+                        variance_folder = f_path + 'Stability/',\
+                        mid_word = str(sum_max_order(basis,get_max_order(basis,n_max)))+'_'+str(basis))
+         
 if __name__=='__main__':
     
     Num_of_shapelets_array = [5,10,20]
     methods = ['lasso', 'sparse', 'lstsq']
-    noise_scale = np.logspace(1, 2.5, 5)
-    alpha_ = np.logspace(-5,-1,6)
+    
+    ## Range chose so that SNR is in range ~20 -- ~50
+    noise_array = np.logspace(1.1, 1.5, 5)
+    alpha_ = np.logspace(-5,-1.3,6)
     basis_array = ['Polar', 'XY']
     
-    # Select a method for fitting the coefficients
-    for basis in basis_array:
-        
-        for solver in ['lasso']:#range(len(methods)):
 
-            test_stability(solver, basis, noise_scale,\
-                    alpha_ = alpha_, Num_of_shapelets_array = Num_of_shapelets_array)
+    # Generate noisy images
+    # galsim images are 78 x 78
+    size_X = 78; size_Y=78
+    noisy_mat_num = 10
+
+    noise_matrix = np.zeros((size_X*size_Y , noisy_mat_num))
+    for i in xrange(noisy_mat_num):
+        noise_matrix[:,i] = np.random.randn(size_X*size_Y)
+
+    for noise_scale in noise_array:
+        # Select a method for fitting the coefficients
+        for basis in basis_array[1:]:
+            
+            for solver in ['lstsq']:#range(len(methods)): 
+
+                test_stability(solver, basis, \
+                        noise_scale, noise_img = noise_matrix, noise_img_num = noisy_mat_num,\
+                        size_X = size_X, size_Y = size_Y,\
+                        alpha_ = alpha_, Num_of_shapelets_array = Num_of_shapelets_array)
            
     #show_some_shapelets()
     #p_shapelet.plot_shapelets(6,2,1)
