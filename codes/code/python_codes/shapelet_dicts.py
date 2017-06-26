@@ -139,7 +139,7 @@ def coeff_plot2d(coeffs,N1,N2,ax=None,fig=None,orientation='vertical'):
     coeffs_reshaped = None
 
     if (coeffs.shape != (N1,N2)):
-        coeffs_reshaped = np.abs(coeffs.reshape(N1,N2)) ## does not 
+        coeffs_reshaped = coeffs.reshape(N1,N2) ## does not 
     else:
         coeffs_reshaped = coeffs
 
@@ -152,6 +152,83 @@ def coeff_plot2d(coeffs,N1,N2,ax=None,fig=None,orientation='vertical'):
 
     fig.colorbar(im,cax=cax,orientation=orientation)
     return fig,ax
+
+def coeff_plot_polar(coeffs, N1,N2, N_range = 10,ax = None, fig = None, colormap = cm.bwr,\
+        orientation = 'vertical'):
+    """
+    Plot the values of coeffs in the triangular grid
+    """
+    import matplotlib as mpl
+    import matplotlib.cm as cm
+    from matplotlib.patches import Rectangle
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+    ## Initialize the array for the colors / intenzities of the coefs
+    color_vals = []
+
+    ## For now 15 is the selected N_range
+    x = []
+    y = []
+    
+    ## Check if order of n in basis (N1 currently) is smaller than N_range
+    if N1 < N_range:
+        N_range = N1
+    
+    k = 0
+    for n in xrange(N_range):
+        for m in xrange(-n,n+1,2):
+            x.append(n)
+            color_vals.append(coeffs[k])
+            k += 1
+            ## Make appropriate y coord
+            ## So that the squares don't overlap
+            ## and there is no white space between
+        y.append(np.linspace(-n/2.,n/2.,n+1))
+    
+    ## Merge everything into one array of the same shape as x
+    x = np.asarray(x)
+    y = np.concatenate(y[:])    
+    color_vals = np.asarray(color_vals)
+    ## Control the size of squares
+    dx = [x[1]-x[0]]*len(x) 
+    
+    ## Get the range for the colorbar
+    norm = mpl.colors.Normalize(
+        vmin=np.min(color_vals),
+        vmax=np.max(color_vals))
+
+    ## choose a colormap
+    c_m = colormap
+
+    ## create a ScalarMappable and initialize a data structure
+    s_m = cm.ScalarMappable(cmap=c_m, norm=norm); s_m.set_array([])
+
+    if fig == None:
+        fig, ax = plt.subplots()
+    
+    ax.set_ylabel('m')
+    ax.set_xlabel('n')
+    ax.set_aspect('equal')
+    ax.axis([min(x)-1., max(x)+1., min(y)-1., max(y)+1.])
+    
+    ## Normalize the values so that it is easier to plot
+    color_vals = color_vals / np.max(color_vals)
+
+    ## Add the coeffs as squares
+    ## without any white spaces remaining
+    for x,y,c,h in zip(x,y,color_vals,dx):
+        ax.add_artist(\
+                Rectangle(xy=(x-h/2., y-h/2.),\
+                linewidth=3, color = colormap(c),\
+                width=h, height=h))
+    
+    ## Locate the axes for colorbar
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%")
+
+    fig.colorbar(s_m, cax = cax)
+    
+    return fig, ax
 
 def show_some_shapelets(M=4,N=4):
     fig,ax = plt.subplots(M,N)
@@ -185,7 +262,10 @@ def plot_decomposition(cube, img_idx, size_X, size_Y, \
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
     fig, ax = plt.subplots(2,2, figsize = (10, 10))
-    coeff_plot2d(base_coefs,N1,N2,ax=ax[1,1],fig=fig)
+    if basis == 'XY' or basis == 'Elliptical':
+        coeff_plot2d(base_coefs,N1,N2,ax=ax[1,1],fig=fig)
+    elif basis == 'Polar':
+        coeff_plot_polar(base_coefs,N1,N2,ax=ax[1,1], fig=fig)
     vmin, vmax = min(shapelet_reconst.min(),signal.min()), max(shapelet_reconst.max(),signal.max())
 
     im00 = ax[0,0].imshow(cube[img_idx],vmin=vmin,vmax=vmax)
@@ -208,6 +288,7 @@ def plot_decomposition(cube, img_idx, size_X, size_Y, \
             +str(np.round(recovered_energy_fraction,4)))
     ax[1,0].set_title('Residual image - Frac. of energy = '\
             +str(np.round(residual_energy_fraction,4)))
+    ax[1,1].grid(lw = 1)
     ax[1,1].set_title('Magnitude of coefficients')
     fig.suptitle('Shapelet Basis decomposition')
     
@@ -246,10 +327,14 @@ def plot_solution(N1,N2,cube, img_idx,size_X, size_Y,\
     im01 = ax2[0,1].imshow(reconst.reshape(size_X,size_Y), aspect = '1', vmin=vmin, vmax=vmax)
     im10 = ax2[1,0].imshow(residual.reshape(size_X,size_Y), aspect = '1')
     print coefs.shape
-    coefs = coefs.reshape(2*N1,2*N2)
-    coeff_plot2d(coefs,N1*2,N2*2,ax=ax2[1,1],fig=fig2) 
+    
+    if basis == 'XY' or basis == 'Elliptical':
+        coefs = coefs.reshape(N1,N2)
+        coeff_plot2d(coefs,N1,N2,ax=ax2[1,1],fig=fig2) 
+    elif basis == 'Polar':
+        coeff_plot_polar(coefs,N1,N2, ax=ax2[1,1],fig=fig2)
 
-    ax2[1,1].grid(lw=2)
+    ax2[1,1].grid(lw=1)
     
     # Force the colorbar to be the same size as the axes
     divider00 = make_axes_locatable(ax2[0,0])
@@ -408,35 +493,76 @@ def get_max_order(basis, n_max):
     
     @param basis Basis of the decomp.
     @param n_max Chosen max number by user
+
+    ---------------
+    For example
+
+    n_max = 5
+
+    XY
+    return 1 -----> Combinations of shapelets available (0,0), (0,1), (1,0)
+    // If 2 is included the number of combinations would exceed n_max and 
+    // triangle won't be symmetric
+    return 1 -----> Combinations of shapelets (0,0), (-1,1), (1,1)
+    // Same as above
     """
 
-    xy_max_order = lambda n: int(np.floor(np.sqrt(n) - 1))
-    polar_max_order = lambda n: int(np.floor( (-3 + np.sqrt(9 + 8*(n-1)))/2.))
+    #xy_max_order = lambda n: int(np.floor(np.sqrt(n) - 1))
+    #polar_max_order = lambda n: int(np.floor( (-3 + np.sqrt(9 + 8*(n-1)))/2.))
+    
+    ## Get the symmetric triangle for XY and same for Polar
+    ## It's the same because for XY I look at the m+n, and for Polar just n
+    max_order = lambda n: int(np.floor( (-3 + np.sqrt(9 + 8*(n-1)))/2.))
 
-    if (basis == 'Polar'):
-        return polar_max_order(n_max)
-    elif (basis == 'XY') or (basis == 'Elliptical'):
-        return xy_max_order(n_max)
-    else:
-        pass
+    return max_order(n_max)
 
 def sum_max_order(basis, n):
     """
     Given the maximum order of shapelet included
     calculate how many combinations of shapelets there are
+    
+    -------------
+    For example:
+    n = 1
+    
+    XY basis / Elliptical basis
+    return 3 ---> Combinations (0,0), (0,1), (1,0) 
+    // Because in the decomp I hace conditon n+m<= 1, in that way i get symmetric triangle
+    Polar
+    return 3 ---> Combinations (0,0), (-1,1), (1,1) 
+    // If 2 would be included then the order of shapelet would exceed 1 
     """
+    return n*(n+1)/2 + n + 1
 
-    if (basis == 'Polar'):
-        return n*(n+1)/2 + n + 1
-    if (basis == 'XY') or (basis == 'Elliptical'):
-        return n*(n+1) + n + 1
+
+def decompose_cartesian(x0,y0,sigma,X,Y,basis, a=1., b=1.):
+    
+    for k in xrange(N1*N2):
+        m,n = k/N1, k%N1
+        if (m+n <= get_max_order(basis,n_max)): 
+            if noise_scale == 0:
+                label_arr.append(str("(%d, %d)" % (n,m)))
+            if basis == 'XY':
+                arr = shapelet2d(m,n,x0=x0,y0=y0,sx=sigma,sy=sigma)(X,Y).flatten() 
+            elif basis == 'Elliptical':
+                arr = elliptical_shapelet(m,n,x0,y0, sx=a, sy=b)(X,Y).flatten()
+            D[:, k] = arr
+            arr_norm2 = np.dot(arr,arr)
+            coef = np.dot(arr,signal)
+            if(coef==0):
+                base_coefs[n,m] =0
+            else:
+                base_coefs[n,m] = coef/np.sqrt(arr_norm2)
+                shapelet_reconst = shapelet_reconst + (coef*arr)/arr_norm2
+
+    return D,base_coefs, shapelet_reconst, label_arr
 
 def shapelet_decomposition(image_data,\
         f_path = '/home/',\
         N1=20,N2=20, basis = 'XY', solver = 'sparse', image = None, \
         coeff_0 = None, noise_scale = None, alpha_ = None, Num_of_shapelets = None, n_max = None,\
         column_number = 1.01, plot_decomp= False, \
-        q = 1., theta = np.pi/4.):
+        q = 2., beta_array = [1.5, 2, 2.5]):
 
     """ 
     Do the shapelet decomposition
@@ -487,11 +613,13 @@ def shapelet_decomposition(image_data,\
         pick_an_img = [0] 
     
     if (basis == 'XY') or (basis == 'Elliptical'):
-        D = np.zeros((size_X*size_Y,4*N1*N2)) # alloc for Dictionary
+        D = np.zeros((size_X*size_Y,N1*N2)) # alloc for Dictionary
         base_coefs = np.zeros((N1,N2))
     elif (basis == 'Polar'):
-        D = np.zeros((size_X*size_Y,4*N1*N2))#, dtype=complex)
-        base_coefs = np.zeros((N1,N2))#, dtype=complex)
+        D = np.zeros((size_X*size_Y,N1*N2))#, dtype=complex)
+        base_coefs = np.zeros(N1*N2)#, dtype=complex)
+    elif (basis == 'Compound'):
+        D = np.zeros((size_X*size_Y, len(beta_array)*N1*N2))
 
     X = np.linspace(0,size_X-1,size_X)  
     Y = np.linspace(0,size_Y-1,size_Y)
@@ -523,7 +651,7 @@ def shapelet_decomposition(image_data,\
         if n_max == None:
             ## So that it is a complete triangle
             ## Formula for a symmetric triangle is n * (n+2)
-            n_max = 20
+            n_max = 21
 
         #Make a meshgrid for the polar shapelets
 
@@ -544,10 +672,9 @@ def shapelet_decomposition(image_data,\
 
             #Set the counter for columns of basis matrix D
 
-            k_p = 0
             polar_basis = 'refregier' 
             label_arr = []
-
+            k_p = 0
             ## For symmetric coeffs triangle solve
             ## n^2 + 2n + 2 = 2n_max, positive solution, such that
             ## Sum(i+1)_{i in [0,n]} <= n_max
@@ -573,7 +700,6 @@ def shapelet_decomposition(image_data,\
                     ## Make the basis matrix D
                     D[:,k_p] = arr_res 
                     k_p += 1
-                    
                     ## Calculate the norms of basis vectors and coefficients
                     arr_norm2_res = np.dot(arr_res,arr_res)
                     arr_norm2 = np.dot(arr, arr)
@@ -584,10 +710,10 @@ def shapelet_decomposition(image_data,\
 
                     ## Add coefficients to basis_coefs array for later use
                     ## Make the shapelet reconstruction
-                    if (coef_im==0) or (coef_r==0): 
-                        base_coefs[n,m]=0 
+                    if (coef_res==0): 
+                        base_coefs[k_p] = 0 
                     else: 
-                        base_coefs[n,m] = coef_res/np.sqrt(arr_norm2_res)
+                        base_coefs[k_p] = coef_res/np.sqrt(arr_norm2_res)
                         shapelet_reconst = shapelet_reconst \
                                 + coef_res*arr_res/arr_norm2_res
         elif(basis == 'XY'):
@@ -596,11 +722,11 @@ def shapelet_decomposition(image_data,\
              for k in xrange(N1*N2):
                 m,n = k/N1, k%N1 
                 ## For symmetric coeffs / complete triangle
-                ## such that Sum(2*i + 1)_{i in [0,n]} <= n_max
-                ## solve n^2 + 2*n = n_max                 
+                ## such that Sum(i + 1)_{i in [0,n]} <= n_max
+                ## solve n^2 + 2n + 2 = 2n_max                 
                 if (m+n <= get_max_order(basis,n_max)): 
                     if noise_scale==0:
-                        label_arr.append(str("(%d, %d)" % (n,m)))
+                        label_arr.append(str("(%d, %d)" % (m,n)))
                     arr = shapelet2d(m,n,x0=x0,y0=y0,sx=sigma,sy=sigma)(X,Y).flatten() 
                     D[:,k] = arr
                     arr_norm2 = np.dot(arr, arr)
@@ -616,16 +742,17 @@ def shapelet_decomposition(image_data,\
             a = sigma / np.sqrt(q)
             b = sigma * np.sqrt(q)
             label_arr =[]
+            
             for k in xrange(N1*N2):
                 m,n = k/N1, k%N1
                 if (m+n <= get_max_order(basis,n_max)): 
                     if noise_scale == 0:
                         label_arr.append(str("(%d, %d)" % (n,m)))
-                    arr = elliptical_shapelet(m,n,x0,y0, sx=a, sy=b, theta = theta)(X,Y).flatten()
+                    arr = elliptical_shapelet(m,n,x0,y0, sx=a, sy=b)(X,Y).flatten()
                     D[:, k] = arr
                     arr_norm2 = np.dot(arr,arr)
                     coef = np.dot(arr,signal)
-                    if(coeff==0):
+                    if(coef==0):
                         base_coefs[n,m] =0
                     else:
                         base_coefs[n,m] = coef/np.sqrt(arr_norm2)
@@ -639,8 +766,16 @@ def shapelet_decomposition(image_data,\
         residual_energy_fraction = np.sum(residual**2)/np.sum(signal**2)
         recovered_energy_fraction = np.sum(shapelet_reconst**2)/np.sum(signal**2)
 
-        print "Comparing moments_amp to base_coefs[0,0]", np.abs(base_coefs[0,0]), shape.moments_amp
-        print "Base coefficients sum over signal", \
+        if basis =='Polar':
+            print "Comparing moments_amp to base_coefs[0,0]", \
+                    np.abs(base_coefs[0]), shape.moments_amp
+            print "Base coefficients sum over signal", \
+                (np.sum(base_coefs**2))/(np.sum(signal**2)), \
+                (np.sum(residual**2)/np.sum(signal**2)) 
+        else:
+            print "Comparing moments_amp to base_coefs[0,0]", \
+                    np.abs(base_coefs[0,0]), shape.moments_amp
+            print "Base coefficients sum over signal", \
                 (np.sum(base_coefs**2))/(np.sum(signal**2)), \
                 (np.sum(residual**2)/np.sum(signal**2)) 
 
@@ -650,7 +785,7 @@ def shapelet_decomposition(image_data,\
             alpha_str = str("%.3e" % (alpha_))
 
         mkdir_p(f_path + 'Decomp/')
-        if (plot_decomp == True) and (basis != 'Polar'):
+        if (plot_decomp == True):
             
             ## Check if there is already the XY decomp
             if os.path.isfile(f_path + \
@@ -840,12 +975,14 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
     arange_x = np.arange(N_plot)
     
     fig_scat, ax_scat = plt.subplots()
+
     plt.errorbar(arange_x, coeff_res_r, yerr=variance_sqrt_r, fmt='bo', \
             label='Coeff. value')
     plt.xticks(arange_x, label_arr_r)
     plt.title('Scatter plot of first %d coefs' % (N_plot))
     plt.legend(loc = 'best')
     plt.setp(ax_scat.get_xticklabels(),rotation=90, horizontalalignment = 'right')
+    
     ax_scat.tick_params(axis='x', which ='both', pad = 10)
     
     ## Set the font of the ticks
@@ -861,12 +998,16 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
     ## Add the stability plot 
     fig, ax = plt.subplots()
     
-    coefs = coeff_stability_res.reshape(2*N1,2*N2)
-    coeff_plot2d(coefs,N1*2,N2*2,ax=ax,fig=fig) 
-    
+    if basis == 'XY' or basis == 'Elliptical':
+        coefs = coeff_stability_res.reshape(N1,N2)
+        coeff_plot2d(coefs,N1,N2,ax=ax,fig=fig) 
+    elif basis == 'Polar':
+        coeff_plot_polar(coeff_stability_res,N1,N2,ax=ax,fig=fig)
+
     str_s_to_n = str("%.3e" % (signal_to_noise)) 
 
-    ax.grid(lw=2)
+    ax.grid(lw=1)
+    ax.set_aspect('equal')
     ax.set_title('Stability of coefs '\
             + r'$\displaystyle \left|\frac{<N.C.>_i}{O.C._i} - 1\right|$' \
             + '\n' \
@@ -886,10 +1027,14 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
     
     fig_var, ax_var = plt.subplots()
     
-    var_mat = variance.reshape(2*N1,2*N2)
-    coeff_plot2d(var_mat,N1*2,N2*2,ax=ax_var,fig=fig_var) 
-       
-    ax_var.grid(lw=2)
+    if basis=='XY' or basis == 'Elliptical':
+        var_mat = variance.reshape(N1,N2)
+        coeff_plot2d(var_mat,N1,N2,ax=ax_var,fig=fig_var) 
+    elif basis == 'Polar':
+        coeff_plot_polar(variance,N1,N2,ax=ax_var,fig=fig_var)
+
+    ax_var.grid(lw=1)
+    ax_var.set_aspect('equal')
     ax_var.set_title('Variance matrix '\
             + r'$\displaystyle \sqrt{Var\left(N.C._i\right)} / |\left< N.C._i\right>|$' \
             + '\n' \
@@ -904,10 +1049,14 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
     ## Just the variance image
     fig_var, ax_var = plt.subplots()
     
-    var_mat_sqrt = variance_sqrt.reshape(2*N1,2*N2)
-    coeff_plot2d(var_mat_sqrt,N1*2,N2*2,ax=ax_var,fig=fig_var) 
-       
-    ax_var.grid(lw=2)
+    if basis == 'XY' or basis == 'Elliptical':
+        var_mat_sqrt = variance_sqrt.reshape(N1,N2)
+        coeff_plot2d(var_mat_sqrt,N1,N2,ax=ax_var,fig=fig_var) 
+    elif basis == 'Polar':
+        coeff_plot_polar(variance_sqrt,N1,N2,ax=ax_var,fig=fig_var)
+
+    ax_var.grid(lw=1)
+    ax_var.set_aspect('equal')
     ax_var.set_title('Variance matrix '\
             + r'$\displaystyle \sqrt{Var\left(N.C._i\right)}$' \
             + '\n' \
@@ -929,7 +1078,7 @@ def test_stability(solver, basis, \
     from utils.get_gaussian_weight_image import get_gaussian_weight_image as gen_weight_image
 
     ## Initialize values
-    N1 = 20; N2=20; n_max = 20; Num_of_shapelets = None; alpha = None
+    N1 = 20; N2=20; n_max = 21; Num_of_shapelets = None; alpha = None
     
     image = None; image_curr = None; coeffs_0 = None; coeffs_curr = None; coeff_stability = None
     
@@ -1147,7 +1296,7 @@ if __name__=='__main__':
     ## Range chose so that SNR is in range ~20 -- ~50
     noise_array = np.logspace(1.1, 1.5, 5)
     alpha_ = np.logspace(-5,-1.3,6)
-    basis_array = ['Polar', 'XY']
+    basis_array = ['Elliptical', 'Polar', 'XY']
     
 
     # Generate noisy images
@@ -1161,7 +1310,7 @@ if __name__=='__main__':
 
     for noise_scale in noise_array:
         # Select a method for fitting the coefficients
-        for basis in basis_array[1:]:
+        for basis in basis_array:
             
             for solver in ['lstsq']:#range(len(methods)): 
 
