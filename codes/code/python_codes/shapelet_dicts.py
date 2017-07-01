@@ -170,7 +170,10 @@ def decompose_polar(basis,\
     ## n^2 + 2n + 2 = 2n_max, positive solution, such that
     ## Sum(i+1)_{i in [0,n]} <= n_max
     max_order = get_max_order(basis,n_max)
-    for n in xrange(max_order):
+    
+    ## This needs to go to max_order + 1, because maximum order would not be included
+    ## in the iteration
+    for n in xrange(max_order + 1):
         for m in xrange(-n,n+1,2):
             
             ## n_max - defined as:
