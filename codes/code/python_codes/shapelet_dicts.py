@@ -1,6 +1,5 @@
 import sys,os
 import numpy as np
-import numpy.linalg as linalg
 from scipy.special import hermitenorm
 from scipy.integrate import quad
 from utils.shapelet_utils import *

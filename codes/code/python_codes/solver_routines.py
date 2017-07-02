@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.linalg as linalg
 
 from sklearn.linear_model import OrthogonalMatchingPursuit as OMP
 from sklearn import linear_model
@@ -35,7 +36,7 @@ def sparse_solver(D, signal, N1,N2, Num_of_shapelets = None):
     n_nonzero_coefs = Num_of_shapelets
     if Num_of_shapelets == None:
         n_nonzero_coefs = N1*N2/4
-    omp = OMP(n_nonzero_coefs)
+    omp = OMP(n_nonzero_coefs = n_nonzero_coefs)
     omp.fit(D,signal)
     sparse_coefs = omp.coef_
     sparse_idx = sparse_coefs.nonzero()
@@ -59,35 +60,40 @@ def solver_SVD(D, n_nonzero, signal):
     """
 
     rows_SVD, columns_SVD = np.shape(D)
-    U, s, VT = linalg.svd(D, full_matrices = True, compute_uv = True)    
+    U, s, VT = linalg.svd(D, full_matrices = True)    
   
-    ## Count in only n_nonzero signular values
-    s = s[-n_nonzero:]
+    ## Count in only n_nonzero signular values set rest to zero
+    s[n_nonzero:] = 0 
     
     ## In the docs it is said that the matrix returns V_transpose and not V 
     V = VT.transpose() 
     
-    ## Make 1 / sigma_i array, where sigma_i are the singular values obtained from SVD
-    dual_s = 1./s
-
     ## Initialize diagonal matrices for singular values
     S = np.zeros(D.shape)
     S_dual = np.zeros(D.shape)
-    
-    ## Put singular values on the diagonal
-    for i in xrange(len(s)):
-        S[i,i] = s[i]
-        S_dual[i,i] = dual_s[i]
-    
-    coeffs_SVD = np.dot(V, np.dot(S_dual.transpose(), np.dot(U.transpose(),signal)))
 
-    n_nonzero_coefs_SVD = np.count_nonzero(coeffs_SVD)
-    reconstruction_SVD = np.dot(D,coeffs_SVD)
+    ## Put singular values on the diagonal
+    for i in xrange(n_nonzero):
+        S[i,i] = s[i]
+        S_dual[i,i] = 1./s[i]
+   
+    coeffs_SVD = np.dot(V, np.dot(S_dual.transpose(), np.dot(U.transpose(),signal)))
+    
+    ## There are some residual values from V which are a lot smaller then
+    ## the chosen n_nonzero coeffs, so I just set them to zero
+    coeffs_SVD_r = np.zeros_like(coeffs_SVD)
+    ## Get indices of n_nonzero largest by absolute value
+    idx_n_nonzero = np.abs(coeffs_SVD).argsort()[-n_nonzero:][::-1]
+    ## Store them in the resultant coeff array
+    coeffs_SVD_r[idx_n_nonzero] = coeffs_SVD[idx_n_nonzero]
+
+    n_nonzero_coefs_SVD = np.count_nonzero(coeffs_SVD_r)
+    reconstruction_SVD = np.dot(D,coeffs_SVD_r)
     residual_SVD = signal - reconstruction_SVD
     residual_energy_fraction_SVD = np.sum(residual_SVD**2)/np.sum(signal**2)
     recovered_energy_fraction_SVD = np.sum(reconstruction_SVD**2)/np.sum(signal**2)
     
-    return coeffs_SVD, reconstruction_SVD, residual_SVD, \
+    return coeffs_SVD_r, reconstruction_SVD, residual_SVD, \
             residual_energy_fraction_SVD, recovered_energy_fraction_SVD, n_nonzero_coefs_SVD
 
 def solver_lstsq(D, signal):
@@ -169,9 +175,11 @@ def select_solver_do_fitting_plot(\
         
         coeffs, reconst, residual, \
         residual_energy_fraction, recovered_energy_fraction, \
-        n_nonzero_coefs = solver_SVD(D, n_max, signal) 
-
-        folder_path_word = f_path + solver + '/'
+        n_nonzero_coefs = solver_SVD(D, Num_of_shapelets, signal) 
+        
+        mid_path_word = str(Num_of_shapelets) + '_' + basis
+        end_word = str(Num_of_shapelets)
+        folder_path_word = f_path + solver + '/' + mid_path_word + '/'
 
     ## Ordinary least squares solver
     elif (solver == 'lstsq'):  

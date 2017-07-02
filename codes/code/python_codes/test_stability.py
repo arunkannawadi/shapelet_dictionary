@@ -195,12 +195,43 @@ def test_stability(solver, basis, \
                     noise_scale,noise_img_num,\
                     plot_decomp = True, n_max = n_max,\
                     mid_word = mid_word)
+    elif(solver == 'svd'):
+        
+        for Num_of_shapelets in Num_of_shapelets_array:
+            
+            ## Make the no noise image
+            f_path = 'Plots/' + str("%.3e" % (0.0)) + '/'
+            mkdir_p(f_path)
+            
+            if n_max < Num_of_shapelets:
+                n_max = Num_of_shapelets
+
+            image_0, image_reconst, coeff_0, label_arr, beta_array =\
+                        shapelet_decomposition(image_data,\
+                        f_path = f_path,\
+                        N1=N1,N2=N2,basis=basis,solver=solver,\
+                        image = None,coeff_0= None, noise_scale=0,\
+                        Num_of_shapelets=Num_of_shapelets,\
+                        n_max = n_max,\
+                        plot_decomp = True)
+            
+            mid_word = str(sum_max_order(basis,get_max_order(basis,n_max)))+'_'+str(basis)
+            if image_reconst!=None:
+                do_noise_iteration(image_0,image_data,noise_img,\
+                        size_X,size_Y,\
+                        N1,N2,\
+                        coeff_0,label_arr,beta_array,\
+                        solver,\
+                        noise_scale,noise_img_num,\
+                        Num_of_shapelets = Num_of_shapelets, plot_decomp = True, n_max = n_max,\
+                        mid_word = mid_word)
+
 
 
 if __name__=='__main__':
     
-    Num_of_shapelets_array = [15,21,28,36,43]
-    methods = ['lasso', 'sparse', 'lstsq']
+    Num_of_shapelets_array = [15,21,28,36]
+    methods = ['lasso', 'sparse', 'svd', 'lstsq']
     
     ## Range chose so that SNR is in range ~20 -- ~50
     noise_array = np.logspace(1.1, 1.5, 5)
@@ -220,7 +251,7 @@ if __name__=='__main__':
         # Select a method for fitting the coefficients
         for basis in [basis_array[1]]:
             
-            for solver in ['sparse']:#range(len(methods)): 
+            for solver in ['svd']:#range(len(methods)): 
 
                 test_stability(solver, basis, \
                         noise_scale, noise_img = noise_matrix, noise_img_num = noisy_mat_num,\
