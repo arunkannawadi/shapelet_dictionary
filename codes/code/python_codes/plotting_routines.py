@@ -95,9 +95,9 @@ def coeff_plot_polar(coeffs, N1,N2, \
             if coeffs[k] != 0:
                 f.write("%d\t%d\t%.3f\n" % (n,m, coeffs[k]))
             k += 1
-            ## Make appropriate y coord
-            ## So that the squares don't overlap
-            ## and there is no white space between
+        ## Make appropriate y coord
+        ## So that the squares don't overlap
+        ## and there is no white space between
         y.append(np.linspace(-n/2.,n/2.,n+1))
 
     f.close()
@@ -343,7 +343,7 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
 
 def stability_plots(basis,solver,coefs,\
         N1,N2,\
-        f_path_to_save,\
+        f_path_to_save,y_axis_scale = '',\
         ax_title = '', f_coef_output = ''):
     
     fig, ax = plt.subplots()
@@ -354,7 +354,9 @@ def stability_plots(basis,solver,coefs,\
     elif basis == 'Polar':
         coeff_plot_polar(coefs,N1,N2,ax=ax,fig=fig,\
                 f_coef_output = f_coef_output)
-
+    
+    if y_axis_scale != '':
+        ax.set_yscale(y_axis_scale)
     ax.grid(lw=2)
     ax.set_aspect('equal')
     ax.set_title(ax_title)
@@ -382,7 +384,7 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
     len_coeffs = coeff_stability.shape[0]
     coeff_stability_res = np.zeros(len_coeffs)
     coeff_mean_value = np.zeros(len_coeffs)
-    coeff_abs_diff = np.zeros(len_coeffs)
+    coeff_diff = np.zeros(len_coeffs)
     variance = np.zeros(len_coeffs)
     variance_sqrt = np.zeros(len_coeffs)
     
@@ -400,7 +402,7 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
 
         ## Calculate the mean of the i_th coordinate
         coeff_stability_res[i] = coeff_stability_res[i]/noise_img_num
-        coeff_abs_diff[i] = coeff_stability_res[i] - coeff_0[i]
+        coeff_diff[i] = coeff_stability_res[i] - coeff_0[i]
         coeff_mean_value[i] = coeff_stability_res[i]
         if coeff_stability_res[i] != 0:
             variance[i] = std_i/np.abs(coeff_stability_res[i])
@@ -449,19 +451,24 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
     arange_x = np.arange(len(get_idx))
     
     fig_scat, ax_scat = plt.subplots(2, sharex=True)
-    
+
+    ax_scat[0].set_title(\
+            'Scatter plot of '\
+            + r'$\displaystyle \left<N.C_i\right>$'\
+            + 'for first %d coeffs'\
+            % (N_plot))
+
+    ax_scat[1].set_title(\
+            'Scatter plot of'\
+            + r'$\displaystyle \left|\frac{\left<N.C._i\right>}{O.C._i} - 1 \right|$')
+    ax_scat[0].set_yscale('symlog')
+    ax_scat[1].set_yscale('symlog')
     ax_scat[0].errorbar(arange_x, coeff_mean_r, yerr=variance_sqrt_r, fmt='bo', \
             label='Coeff. value')
     ax_scat[1].errorbar(arange_x, coeff_res_r, yerr=variance_sqrt_r,fmt='ro',\
             label='Coeff. stability')
     plt.xticks(arange_x, label_arr_r)
-    plt.title(\
-            'Scatter plot of '\
-            + r'$\displaystyle \left<N.C_i\right>$'\
-            + 'for first %d coeffs'\
-            % (N_plot))
-    plt.legend(loc = 'best')
-    plt.setp(ax_scat[0].get_xticklabels(),rotation=90, horizontalalignment = 'right')
+    ax_scat[1].set_xticklabels(ax_scat[1].get_xticklabels(),rotation=90, horizontalalignment = 'right')
     
     ax_scat[0].tick_params(axis='x', which ='both', pad = 10)
     ax_scat[1].tick_params(axis='x', which ='both', pad = 10)
@@ -473,7 +480,8 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
         tick.label.set_fontsize(7)
     for tick in ax_scat[0].xaxis.get_minor_ticks():
         tick.label.set_fontsize(7)
-
+    
+    fig_scat.tight_layout()
     plt.savefig(path_to_save + solver + '_' + mid_word + "_scatter_coefs.png")
     plt.clf()
 
@@ -485,12 +493,12 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
         variance_initial = variance.reshape(N1,N2*len(beta_array))
         variance_sqrt_initial = variance_sqrt.reshape(N1,N2*len(beta_array))
         coefs_initial = coeff_stability_res.reshape(N1,N2*len(beta_array))
-        coefs_abs_diff_initial = coeff_abs_diff.reshape(N1,N2*len(beta_array))
+        coefs_diff_initial = coeff_diff.reshape(N1,N2*len(beta_array))
     elif basis == 'XY' or basis == 'Elliptical':
         variance_sqrt_initial = variance_sqrt.reshape(N1,N2)
         variance_initial = variance.reshape(N1,N2)
         coefs_initial = coeff_stability_res.reshape(N1,N2)
-        coefs_abs_diff_initial = coeff_abs_diff.reshape(N1,N2)
+        coefs_diff_initial = coeff_diff.reshape(N1,N2)
     
     
     str_s_to_n = str("%.3e" % (signal_to_noise)) 
@@ -505,14 +513,14 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
             variance = variance_initial[:N1, left_N2:right_N2]
             variance_sqrt = variance_sqrt_initial[:N1, left_N2:right_N2]
             coefs = coefs_initial[:N1,left_N2:right_N2]
-            coefs_abs_diff = coefs_abs_diff_initial[:N1,left_N2:right_N2]
+            coefs_diff = coefs_diff_initial[:N1,left_N2:right_N2]
         else:
             coefs = coeff_stability_res
-            coefs_abs_diff = coeff_abs_diff
+            coefs_diff = coeff_diff
 
         ## Plot the stability of coeffs
         ax_title = 'Diff of coefs '\
-            + r'$\displaystyle \left<N.C._i\right> - 1$' \
+            + r'$\displaystyle \left<N.C._i\right> - O.C._i$' \
             + '\n' \
             + 'N.C is averaged over the number of noise realizations' \
             + '\n' \
@@ -523,7 +531,7 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
         f_path_to_save = path_to_save + solver + '_diff_'+mid_word+'_'+str_s_to_n+'_'\
             +str_beta
 
-        stability_plots(basis,solver,coefs_abs_diff,\
+        stability_plots(basis,solver,coefs_diff,\
                 N1,N2,\
                 f_path_to_save,\
                 ax_title = ax_title, f_coef_output = f_path_to_save + '_.txt')
