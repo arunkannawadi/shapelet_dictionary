@@ -247,9 +247,9 @@ if __name__=='__main__':
     for i in xrange(noisy_mat_num):
         noise_matrix[:,i] = np.random.randn(size_X*size_Y)
 
-    for noise_scale in noise_array[:1]:
+    for noise_scale in noise_array:
         # Select a method for fitting the coefficients
-        for basis in [basis_array[1]]:
+        for basis in basis_array:
             
             for solver in ['svd']:#range(len(methods)): 
 
