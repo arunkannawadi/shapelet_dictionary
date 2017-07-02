@@ -265,11 +265,8 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
     ## Initialize this for cartesian and compound
     ## but for polar it is not needed
     tmp_coefs_initial = np.zeros((len(beta_array),N1,N2))
-    if basis =='Compound':
-        for i in xrange(len(beta_array)):
-            tmp_coefs_initial[i] = coefs_initial[i*(N1*N2): N1*N2 + i*(N1*N2)].reshape(N1,N2)
-    elif basis == 'XY' or basis == 'Elliptical':
-            tmp_coefs_initial[i] = coefs_initial.reshape(N1,N2)
+    for i in xrange(len(beta_array)):
+        tmp_coefs_initial[i] = coefs_initial[i*(N1*N2): N1*N2 + i*(N1*N2)].reshape(N1,N2) 
     
     for i in xrange(len(beta_array)):
        
@@ -580,7 +577,8 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
                 + '\n'\
                 + 'beta - ' + str_beta
         
-        f_path_to_save = path_to_save + solver + '_variance_sqrt_' + mid_word + '_' + str_s_to_n\
+        f_path_to_save = path_to_save + solver + '_variance_sqrt_' + mid_word + '_'\
+                + str_s_to_n+'_'\
                 +str_beta
             
         stability_plots(basis,solver,variance_sqrt,\
