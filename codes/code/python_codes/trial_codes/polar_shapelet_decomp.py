@@ -37,6 +37,9 @@ def polar_shapelets_refregier(N, M, beta):
     coeff_1, coeff_2, coeff_3 = coeff(N, M, beta)
     gen_laguerre = special.genlaguerre(n=(N-np.abs(M))/2, alpha=np.abs(M))
     
+    ## Comments from Arun: You seem to have conveniently defined radial and angular parts separately.
+    ## Use them and avoid code repetition.
+    
     if (M > 0):
         laguer_N_M = lambda x, phi: coeff_1 * coeff_2 \
                 * x**(np.abs(M)) \
