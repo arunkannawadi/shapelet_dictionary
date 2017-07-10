@@ -104,7 +104,7 @@ def coeff_plot_polar(coeffs, N1,N2, \
     ## Merge everything into one array of the same shape as x
     x = np.asarray(x)
     y = np.concatenate(y[:])    
-    color_vals = np.abs(np.asarray(color_vals))
+    color_vals = np.asarray(color_vals)
     ## Control the size of squares
     dx = [x[1]-x[0]]*len(x) 
     
@@ -146,6 +146,93 @@ def coeff_plot_polar(coeffs, N1,N2, \
     
     return fig, ax
 
+def _get_gaussian_noise_params(arr,f_path, bins_num = None):
+    """
+    Make a histogram distribution of the values in arr and return back parameters
+    of the best fit gaussian to that (it is assumed that the distr. is gaussian).
+    As a side product plot the obtained gaussian distribution to the f_path.
+
+    Parameters:
+    -----------
+
+    arr : Array of input values for which histogram is going to be calculated
+    f_path : Path variable controling the path where the resulting plot is going 
+             to be saved
+
+    Optional:
+    ---------
+
+    bins_num : Number N+1 of bins to be provided in the histogram
+    initial_guess : Initial guess for the curve_fit function
+
+
+    Returns:
+    --------
+
+     : 2 - length array with obtained sigma and mu values from the fit
+    p_err : 2-length array containing std of sigma and mu
+    """
+
+    from scipy.optimize import leastsq, curve_fit
+    from scipy.stats import norm
+
+    ## Make a callable fucntion gaussian
+    gaussian_lstsq = lambda p, x: \
+            1./np.sqrt(2*np.pi*p[0]**2) * np.exp(- (x - p[1])**2 / (2.* p[0]**2))
+
+    gaussian = lambda x, a, b, mu, sigma: \
+            a * np.exp(- (x - mu)**2 / (2.* sigma**2)) + b
+    
+    errfunc = lambda p, x,y: (y - gaussian_lstsq(p,x))
+
+    if (bins_num == None):
+        bins_num = int(np.floor(0.02*len(arr)))
+    
+    hist, bin_edges_tmp  = np.histogram(arr, bins = bins_num, density = True)
+
+    ## Flatten the bin_edges array by takin the central values
+    bin_edges = np.zeros(len(hist))
+
+    for i in xrange(len(hist)):
+        bin_edges[i] = (bin_edges_tmp[i] + bin_edges_tmp[i+1])/2.
+
+    ## Get the initial guess
+    mu_init, sigma_init = norm.fit(arr)
+    
+    ## Do the fit
+    initial_guess = [sigma_init, mu_init]
+    p_fit, p_cov, ifodict, errmsg, succes = \
+            leastsq(errfunc, initial_guess, args = (bin_edges, hist), full_output = True)
+    
+    ## Erros hav to be calculated manualy
+    s_sq = (errfunc(p_fit, bin_edges, hist)**2).sum()/(len(hist) - len(initial_guess))
+    p_cov = p_cov * s_sq
+    
+    p_err = np.sqrt(np.abs(np.diag(p_cov)))
+
+#    print p_fit
+#    print p_err
+#    ## Curve fit doens't work quite well ? 
+#    p_fit_cf, p_cov_cf = curve_fit(gaussian, bin_edges, hist, p0 = [1., mu_init, sigma_init, 0.1])
+#    p_err_cf = np.sqrt(np.diag(p_cov_cf)) 
+#    
+#    print p_fit_cf
+#    print p_err_cf
+
+    fig, ax = plt.subplots()
+    ax.plot(\
+            bin_edges, hist, 'bo', label ='data')
+    ax.plot(\
+            bin_edges, gaussian_lstsq(p_fit, bin_edges), 'r-', label = 'fit')
+    ax.set_ylabel('PDF of pixel values')
+    ax.set_xlabel('Pixel values')
+    ax.legend(loc='best')
+    plt.savefig(f_path)
+    plt.clf()
+
+    return p_fit[0], p_fit[1], p_err[0], p_err[1]
+
+
 def plot_decomposition(basis, cube, img_idx, size_X, size_Y, \
         base_coefs,N1,N2,shapelet_reconst_array, signal, residual_array,\
         residual_energy_fraction_array,recovered_energy_fraction_array, Path,\
@@ -153,36 +240,38 @@ def plot_decomposition(basis, cube, img_idx, size_X, size_Y, \
 
     """ Plot the decomposition obtained with the chosen __solver__
 
-    @param cube array of images obtained from the .fits file
-    @param img_idx image index in the array
-    @param base_coefs base coefficients obtained from the decomposition
-    @param N1,N2 number of coefficients used for n and m numbers respectively
-    @param shapelet_reconst reconstruction of the image with the obtained base_coefs
-    @param signal an image vector, obtained from flattening the original image matrix
-    @param residual residual obtained with difference between signal and shapelet_reconst
-    @param residual_energy_fraction energy fraction of the residual image
-    @param recovered_energy_fraction energy fraction of the obtained image with shapelet_reconst
-    @param basis variable which controls the selected __basis__ in which decomposition was made
-    @param beta_array Array with betas used // Added for the compound basis
+    Parameters:
+    -----------
+    cube : array of images obtained from the .fits file
+    img_idx : image index in the array
+    base_coefs : base coefficients obtained from the decomposition
+    N1,N2 : number of coefficients used for n and m numbers respectively
+    shapelet_reconst : reconstruction of the image with the obtained base_coefs
+    signal : an image vector, obtained from flattening the original image matrix
+    residual : residual obtained with difference between signal and shapelet_reconst
+    residual_energy_fraction : energy fraction of the residual image
+    recovered_energy_fraction : energy fraction of the obtained image with shapelet_reconst
+    basis : variable which controls the selected __basis__ in which decomposition was made
+    beta_array : Array with betas used // Added for the compound basis
 
     """ 
     from mpl_toolkits.axes_grid1 import make_axes_locatable
     
     if basis =='Compound':
         base_coefs = base_coefs.reshape(N1,N2*len(beta_array))    
-    elif basis == 'XY' or basis == 'Elliptical':
+    elif basis == 'XY' or basis == 'XY_Elliptical':
         base_coefs = base_coefs.reshape(N1,N2)
 
     for i in xrange(len(beta_array)):
        
         shapelet_reconst = shapelet_reconst_array[i]
         residual = residual_array[i]
-        residual_energy_fraction = residual_energy_fraction_array[i]
+        residual_energy_fraction  = residual_energy_fraction_array[i]
         recovered_energy_fraction = recovered_energy_fraction_array[i]
 
         str_beta = str("%.3f" % (beta_array[i]))
 
-        if basis != 'Polar':
+        if (basis != 'Polar') and (basis != 'Polar_Elliptical'):
             left_N2 = 0 + i*N2
             right_N2 = N2 + i*N2
             coefs = base_coefs[:N1, left_N2:right_N2]
@@ -194,11 +283,11 @@ def plot_decomposition(basis, cube, img_idx, size_X, size_Y, \
             print 'beta ', beta_array[i], 'Decomp ', coefs.shape
 
             fig, ax = plt.subplots(2,2, figsize = (10, 10))
-            if basis == 'XY' or basis == 'Elliptical' or basis == 'Compound':
+            if basis == 'XY' or basis == 'XY_Elliptical' or basis == 'Compound':
                 coeff_plot2d(coefs,N1,N2,\
                         ax=ax[1,1],fig=fig,\
                         f_coef_output = Path + '_' + str_beta + '_.txt')
-            elif basis == 'Polar':
+            elif basis == 'Polar' or basis == 'Polar_Elliptical':
                 coeff_plot_polar(coefs,N1,N2,\
                         ax=ax[1,1], fig=fig,
                         f_coef_output = Path + '_' + str_beta + '_.txt')
@@ -224,8 +313,10 @@ def plot_decomposition(basis, cube, img_idx, size_X, size_Y, \
             ax[0,0].set_title('Original (noisy) image')
             ax[0,1].set_title('Reconstructed image - Frac. of energy = '\
                     +str(np.round(recovered_energy_fraction,4)))
-            ax[1,0].set_title('Residual image - Frac. of energy = '\
+            ax[1,0].set_title(\
+                    'Residual image - Frac. of energy = '\
                     +str(np.round(residual_energy_fraction,4)))
+            
             ax[1,1].grid(lw = 2, which = 'both')
             ax[1,1].set_title('Values of coefficients')
             fig.suptitle('Shapelet Basis decomposition')
@@ -242,19 +333,22 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
 
     """ Plot obtained images from the coefficients obtained with the selected __solver__
     
-    @param cube array of images obtained from the .fits file
-    @param img_idx image index in the array
-    @param base_coefs base coefficients obtained from the decomposition
-    @param N1,N2 number of coefficients used for n and m numbers respectively
-    @param shapelet_reconst reconstruction of the image with the obtained base_coefs
-    @param signal an image vector, obtained from flattening the original image matrix
-    @param residual residual obtained with difference between signal and shapelet_reconst
-    @param residual_energy_fraction energy fraction of the residual image
-    @param recovered_energy_fraction energy fraction of the obtained image with shapelet_reconst
-    @param basis variable which controls the selected __basis__ in which decomposition was made
-    @param n_nonzero_coefs nonzero coefficients in the coefs variable
-    @param fig figure object forwarded from plot_decomposition
-    @param Path to control the __savefig__ path
+    Parameters:
+    -----------
+    cube : array of images obtained from the .fits file
+    img_idx : image index in the array
+    base_coefs : base coefficients obtained from the decomposition
+    N1,N2 : number of coefficients used for n and m numbers respectively
+    shapelet_reconst : reconstruction of the image with the obtained base_coefs
+    signal : an image vector, obtained from flattening the original image matrix
+    residual : residual obtained with difference between signal and shapelet_reconst
+    residual_energy_fraction : energy fraction of the residual image
+    recovered_energy_fraction : energy fraction of the obtained image with shapelet_reconst
+    basis : variable which controls the selected __basis__ in which decomposition was made
+    n_nonzero_coefs : nonzero coefficients in the coefs variable
+    fig : figure object forwarded from plot_decomposition
+    Path : to control the __savefig__ path
+    beta_array : array of beta values used for basis matrix
 
     """
     from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -268,11 +362,19 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
     for i in xrange(len(beta_array)):
         tmp_coefs_initial[i] = coefs_initial[i*(N1*N2): N1*N2 + i*(N1*N2)].reshape(N1,N2) 
     
-    for i in xrange(len(beta_array)):
-       
+     ## Set in the title of the residual image the values of the
+    ## mu, sigma with their corresponding erros 
+            
+    sigma_res, mu_res, err_sigma_res, err_mu_res = \
+            _get_gaussian_noise_params(residual,\
+            Path + '_gaussian_noise_fit_.png')
+
+
+    for i in xrange(len(beta_array)): 
+        
         str_beta = str("%.3f" % (beta_array[i]))
 
-        if basis != 'Polar':
+        if basis != 'Polar' and basis != 'Polar_Elliptical':
             left_N2 = 0 + i*N2
             right_N2 = N2 + i*N2
             coefs = tmp_coefs_initial[i]
@@ -292,11 +394,11 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
                     reconst.reshape(size_X,size_Y), aspect = '1', vmin=vmin, vmax=vmax)
             im10 = ax2[1,0].imshow(residual.reshape(size_X,size_Y), aspect = '1')
 
-            if basis == 'XY' or basis == 'Elliptical' or basis == 'Compound':
+            if basis == 'XY' or basis == 'XY_Elliptical' or basis == 'Compound':
                 coeff_plot2d(coefs,N1,N2,\
                         ax=ax2[1,1],fig=fig2,\
                         f_coef_output = Path + '_' + str_beta + '_.txt') 
-            elif basis == 'Polar':
+            elif basis == 'Polar' or basis == 'Polar_Elliptical':
                 coeff_plot_polar(coefs,N1,N2,\
                         ax=ax2[1,1],fig=fig2,\
                         f_coef_output = Path + '_' + str_beta + '_.txt')     
@@ -318,8 +420,18 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
             ax2[0,0].set_title('Original (noisy) image'); 
             ax2[0,1].set_title('Reconstructed image - Frac. of energy = '\
                     +str(np.round(recovered_energy_fraction,4)))
-            ax2[1,0].set_title('Residual image - Frac. of energy = '\
-                    +str(np.round(residual_energy_fraction,4))); 
+                                
+            ax2[1,0].set_title(\
+                    ('Residual image - Frac. of energy = '\
+                    +str(np.round(residual_energy_fraction,4))\
+                    + '\n' \
+                    + r'$\displaystyle \sigma = $'\
+                    + '(%.2f' + r'$\pm$' + '%.2f)' \
+                    + '\n' \
+                    + r'$\displaystyle \mu = $'\
+                    + '(%.2f' + r'$\pm$' + '%.2f)') % \
+                    (sigma_res, err_sigma_res, mu_res, err_mu_res))
+
             fig2.suptitle('Sparse decomposition from an semi-intelligent Dictionary')
 
             if (noise_scale == 0):
@@ -345,10 +457,10 @@ def stability_plots(basis,solver,coefs,\
     
     fig, ax = plt.subplots()
         
-    if basis == 'XY' or basis == 'Elliptical' or basis == 'Compound':
+    if basis == 'XY' or basis == 'XY_Elliptical' or basis == 'Compound':
         coeff_plot2d(coefs,N1,N2,ax=ax,fig=fig,\
                 f_coef_output = f_coef_output) 
-    elif basis == 'Polar':
+    elif basis == 'Polar' or basis == 'Polar_Elliptical':
         coeff_plot_polar(coefs,N1,N2,ax=ax,fig=fig,\
                 f_coef_output = f_coef_output)
     
@@ -491,7 +603,7 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
         variance_sqrt_initial = variance_sqrt.reshape(N1,N2*len(beta_array))
         coefs_initial = coeff_stability_res.reshape(N1,N2*len(beta_array))
         coefs_diff_initial = coeff_diff.reshape(N1,N2*len(beta_array))
-    elif basis == 'XY' or basis == 'Elliptical':
+    elif basis == 'XY' or basis == 'XY_Elliptical':
         variance_sqrt_initial = variance_sqrt.reshape(N1,N2)
         variance_initial = variance.reshape(N1,N2)
         coefs_initial = coeff_stability_res.reshape(N1,N2)
@@ -504,7 +616,7 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
         
         str_beta = str("%.3f" % (beta_array[i]))
 
-        if basis != 'Polar':
+        if basis != 'Polar' and basis != 'Polar_Elliptical':
             left_N2 = 0 + i*N2
             right_N2 = N2 + i*N2
             variance = variance_initial[:N1, left_N2:right_N2]

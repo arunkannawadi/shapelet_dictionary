@@ -1,11 +1,12 @@
 import galsim
+import pyfits
 import numpy as np
 
-from shapelet_dicts import shapelet_decomposition
+from shapelet_dicts import *
 from plotting_routines import plot_stability
 
 ## Import the util package for the weights
-from utils.get_gaussian_weight_image import get_gaussian_weight_image as gen_weight_image
+from utils.galsim_utils import *
 from utils.I_O_utils import *
 from utils.shapelet_utils import *
 
@@ -19,7 +20,8 @@ def do_noise_iteration(image_0,image_data,noise_img,\
         solver,\
         noise_scale,noise_img_num,\
         Num_of_shapelets = 15, alpha = 0.0001,\
-        plot_decomp = True, n_max = 21, \
+        plot_decomp = True, \
+        select_img_idx = 91, n_max = 21, \
         mid_word = ''):
     """
     Do the noise iterations and test the shapelet coefficients stability \
@@ -42,7 +44,7 @@ def do_noise_iteration(image_0,image_data,noise_img,\
     image_sample = image_0 + noise_scale*noise_img[:,0].reshape(size_X,size_Y)
     
     ## Asses the weights and calculate S/N
-    weight_image,flag = gen_weight_image(image_sample)
+    weight_image,flag = get_gaussian_weight_image(image_sample)
     
     if flag == 1:
         weight_image = weight_image.flatten()
@@ -68,10 +70,10 @@ def do_noise_iteration(image_0,image_data,noise_img,\
                     image=image, coeff_0=coeff_0, noise_scale=signal_to_noise,\
                     Num_of_shapelets = Num_of_shapelets, alpha_ = alpha,\
                     plot_decomp = True,\
-                    n_max = n_max,\
+                    select_img_idx = select_img_idx, n_max = n_max,\
                     column_number = i)
             
-            if coeffs_curr != None:
+            if np.all(coeffs_curr != None):
                 coeff_stability[:,k] = coeffs_curr
                 k+=1
 
@@ -82,161 +84,197 @@ def do_noise_iteration(image_0,image_data,noise_img,\
                 path_to_save = f_path + 'Stability/',\
                 mid_word = mid_word)
 
+def get_observed_image_decomp(\
+        N1=20,N2=20,basis='XY',solver='omp',\
+        image=None, coeff_0=None, noise_scale=0,\
+        Num_of_shapelets = 21, alpha = 0.01, \
+        plot_decomp = True,\
+        select_img_idx = 91, n_max = 50):
+
+    ## Take the same beta scale and theta as for the modeled image
+    img_obs = pyfits.getdata('../../data/cube_real.fits')[select_img_idx]
+    img_obs -= 1e6*0.16**2
+    img_ = pyfits.getdata('../../data/cube_real_noiseless.fits')[select_img_idx]
+    img_ -= 1e6*0.16**2
+
+    galsim_image = galsim.Image(img_, scale = 1.0)
+    shape = galsim_image.FindAdaptiveMom()
+    
+    x0,y0,sigma,beta,q = get_moments(shape)
+    ## Alter beta for test
+    image_data = [x0,y0,sigma,beta,q]
+
+    f_path = 'Plots/Observed/'
+    mkdir_p(f_path)
+
+    foo,foo,foo,foo,foo =\
+            shapelet_decomposition(image_data,\
+            f_path = f_path,\
+            N1=N1,N2=N2,basis=basis,solver=solver,\
+            image=img_obs, coeff_0=None, noise_scale=0.,\
+            Num_of_shapelets=Num_of_shapelets, alpha_ = alpha, \
+            select_img_idx = select_img_idx, plot_decomp = True,\
+            n_max = n_max)
+
+def prep_and_do_noise_iter(image_data,\
+        noise_img,noise_img_num,noise_scale,\
+        N1=20,N2=20,basis='XY',solver='omp',\
+        image=None, coeff_0=None,\
+        Num_of_shapelets = 21, alpha = 0.01, \
+        plot_decomp = True,\
+        select_img_idx = 91, n_max = 50):
+    
+    ## Make the no noise image
+    f_path = 'Plots/' + str("%.3e" % (0.0)) + '/'
+    mkdir_p(f_path)
+
+    image_0, image_reconst, coeff_0, label_arr, beta_array =\
+                shapelet_decomposition(image_data,\
+                f_path = f_path,\
+                N1=N1,N2=N2,basis=basis,solver=solver,\
+                image=None, coeff_0=None, noise_scale=0,\
+                Num_of_shapelets=Num_of_shapelets, alpha_ = alpha, \
+                select_img_idx = select_img_idx, plot_decomp = True,\
+                n_max = n_max)
+    
+    if solver != 'lstsq':
+        mid_word = str(\
+                sum_max_order(basis,get_max_order(basis,Num_of_shapelets))) \
+                + '_' + str(basis)
+    else:
+        ## lstsq doesn't have any free params
+        mid_word = str(basis)
+
+    ## If 0 noise decomp. fails don't do anything
+    if (np.all(image_reconst != None)):
+        do_noise_iteration(image_0,image_data,noise_img,\
+                size_X,size_Y,\
+                N1,N2,\
+                coeff_0,label_arr,beta_array,\
+                solver,\
+                noise_scale,noise_img_num,\
+                Num_of_shapelets = Num_of_shapelets, alpha=alpha, \
+                plot_decomp = True, \
+                select_img_idx = select_img_idx, n_max = n_max,\
+                mid_word = mid_word)
+
 def test_stability(solver, basis, \
         noise_scale, noise_img = None, noise_img_num = 10,\
         size_X = 78, size_Y = 78, \
-        alpha_ = None, Num_of_shapelets_array = None):
-
+        alpha_ = None, Num_of_shapelets_array = None, select_img_idx = 91):
+    
+    """
+    Do the stability test of different kinds of algorithms at disposal
+        -- OMP
+        -- SVD
+        -- Lstsq
+        -- Lasso
+    """
     ## Initialize values
-    N1 = 20; N2=20; n_max = 21; Num_of_shapelets = None; alpha = None
+    N1 =20; N2=20; n_max = 50; Num_of_shapelets = None; alpha = None
     
     image = None; image_curr = None; coeffs_0 = None; coeffs_curr = None; coeff_stability = None
     
     ## Store x0,y0 (centroids) of the image and sigma
-    image_data = np.zeros(3)
+    image_data = np.zeros(5)
 
     ## Now select alphas if the method is lasso
     if solver == 'lasso':
-        for l in xrange(len(alpha_)):
+        for alpha in alpha_:
             
-            alpha = alpha_[l]
-            ## Iterate through different noise scales
-            ## image - image to be decomposed
-            ## image_curr - temporary storage for decomposed image
+            for Num_of_shapelets in [Num_of_shapelets_array[2]]:
             
-            # Make the no noise image
-            f_path = 'Plots/' + str("%.3e" % (0.0)) + '/'
-            mkdir_p(f_path)
-            
-            image_0, image_reconst, coeff_0, label_arr, beta_array  =\
-                        shapelet_decomposition(image_data,\
-                        f_path = f_path,\
-                        N1=N1,N2=N2,basis=basis,solver=solver,\
-                        image=None, coeff_0 =None, noise_scale=0,\
-                        alpha_=alpha,\
-                        n_max = n_max,\
-                        plot_decomp = True)
-            
-            mid_word = str("%.3e" % (alpha))+'_'+str(basis)
-            
-            ## If the initial decomposition doesn't fail continue
-            if (image_reconst != None):
-                do_noise_iteration(image_0,image_data,noise_img,\
-                        size_X,size_Y,\
-                        N1,N2,\
-                        coeff_0,label_arr,beta_array,\
-                        solver,\
-                        noise_scale,noise_img_num,\
-                        Num_of_shapelets = Num_of_shapelets,alpha = alpha,\
-                        plot_decomp = True, n_max = n_max,\
-                        mid_word = mid_word)
+                get_observed_image_decomp(\
+                    N1=N1,N2=N2,basis=basis,solver=solver,\
+                    image=None, coeff_0=None, noise_scale=0,\
+                    Num_of_shapelets=Num_of_shapelets,alpha = alpha, \
+                    select_img_idx = select_img_idx, plot_decomp = True,\
+                    n_max = n_max)
+                
+                prep_and_do_noise_iter(image_data,\
+                    noise_img, noise_img_num,noise_scale,\
+                    N1=N1,N2=N2,basis=basis,solver=solver,\
+                    image=None, coeff_0=None,\
+                    Num_of_shapelets=Num_of_shapelets, alpha = alpha, \
+                    select_img_idx = select_img_idx, plot_decomp = False,\
+                    n_max = n_max)
+
                             
-    elif(solver == 'sparse'):
+    elif(solver == 'omp'):
         
         ## Select number of shapelets that would be selected by OMP
-        for c in xrange(len(Num_of_shapelets_array)):
-            Num_of_shapelets = Num_of_shapelets_array[c]
+        for Num_of_shapelets in Num_of_shapelets_array:
             
             ## Control the number of shapelets in initial decomposition for
             ## basis matrix - n_max controls the size of basis matrix
-
+            
             if n_max < Num_of_shapelets:
-                n_max = Num_of_shapelets
+                ## Just set this variable to something larger than
+                ## Num_of_shapelets to control the number of shapelet vectors
+                ## included in the basis
+                n_max = 2*Num_of_shapelets
 
-            ## Make the no noise image
-            f_path = 'Plots/' + str("%.3e" % (0.0)) + '/'
-            mkdir_p(f_path)
+            get_observed_image_decomp(\
+                    N1=N1,N2=N2,basis=basis,solver=solver,\
+                    image=None, coeff_0=None, noise_scale=0,\
+                    Num_of_shapelets=Num_of_shapelets, \
+                    select_img_idx = select_img_idx, plot_decomp = True,\
+                    n_max = n_max)
 
-            image_0, image_reconst, coeff_0, label_arr, beta_array =\
-                        shapelet_decomposition(image_data,\
-                        f_path = f_path,\
-                        N1=N1,N2=N2,basis=basis,solver=solver,\
-                        image=None, coeff_0=None, noise_scale=0,\
-                        Num_of_shapelets=Num_of_shapelets, \
-                        plot_decomp = True,\
-                        n_max = n_max)
-            
-            mid_word = str(\
-                sum_max_order(basis,get_max_order(basis,Num_of_shapelets))) \
-                + '_' + str(basis)
-            
-            ## If 0 noise decomp. fails don't do anything
-            if (image_reconst != None):
-                do_noise_iteration(image_0,image_data,noise_img,\
-                        size_X,size_Y,\
-                        N1,N2,\
-                        coeff_0,label_arr,beta_array,\
-                        solver,\
-                        noise_scale,noise_img_num,\
-                        Num_of_shapelets = Num_of_shapelets, plot_decomp = True, n_max = n_max,\
-                        mid_word = mid_word)
-            
+            prep_and_do_noise_iter(image_data,\
+                    noise_img, noise_img_num,noise_scale,\
+                    N1=N1,N2=N2,basis=basis,solver=solver,\
+                    image=None, coeff_0=None,\
+                    Num_of_shapelets=Num_of_shapelets, \
+                    select_img_idx = select_img_idx, plot_decomp = False,\
+                    n_max = n_max)
+
     elif(solver == 'lstsq'):
         
-        # Make the no noise image
-        f_path = 'Plots/' + str("%.3e" % (0.0)) + '/'
-        mkdir_p(f_path)
-
-        image_0, image_reconst, coeff_0, label_arr, beta_array =\
-                    shapelet_decomposition(image_data,\
-                    f_path = f_path,\
+        get_observed_image_decomp(\
                     N1=N1,N2=N2,basis=basis,solver=solver,\
-                    image = None,coeff_0= None, noise_scale=0,\
-                    n_max = n_max,\
-                    plot_decomp = True)
+                    image=None, coeff_0=None, noise_scale=0,\
+                    Num_of_shapelets=Num_of_shapelets, \
+                    select_img_idx = select_img_idx, plot_decomp = True,\
+                    n_max = n_max)
         
-        mid_word = str(sum_max_order(basis,get_max_order(basis,n_max)))+'_'+str(basis)
-        if image_reconst!=None:
-            do_noise_iteration(image_0,image_data,noise_img,\
-                    size_X,size_Y,\
-                    N1,N2,\
-                    coeff_0,label_arr,beta_array,\
-                    solver,\
-                    noise_scale,noise_img_num,\
-                    plot_decomp = True, n_max = n_max,\
-                    mid_word = mid_word)
+        prep_and_do_noise_iter(image_data,\
+                    noise_img, noise_img_num,noise_scale,\
+                    N1=N1,N2=N2,basis=basis,solver=solver,\
+                    image=None, coeff_0=None,\
+                    Num_of_shapelets=Num_of_shapelets, \
+                    select_img_idx = select_img_idx, plot_decomp = False,\
+                    n_max = n_max)
+        
     elif(solver == 'svd'):
         
         for Num_of_shapelets in Num_of_shapelets_array:
             
-            ## Make the no noise image
-            f_path = 'Plots/' + str("%.3e" % (0.0)) + '/'
-            mkdir_p(f_path)
-            
-            if n_max < Num_of_shapelets:
-                n_max = Num_of_shapelets
+            get_observed_image_decomp(\
+                    N1=N1,N2=N2,basis=basis,solver=solver,\
+                    image=None, coeff_0=None, noise_scale=0,\
+                    Num_of_shapelets=Num_of_shapelets, \
+                    select_img_idx = select_img_idx, plot_decomp = True,\
+                    n_max = n_max)
 
-            image_0, image_reconst, coeff_0, label_arr, beta_array =\
-                        shapelet_decomposition(image_data,\
-                        f_path = f_path,\
-                        N1=N1,N2=N2,basis=basis,solver=solver,\
-                        image = None,coeff_0= None, noise_scale=0,\
-                        Num_of_shapelets=Num_of_shapelets,\
-                        n_max = n_max,\
-                        plot_decomp = True)
-            
-            mid_word = str(sum_max_order(basis,get_max_order(basis,n_max)))+'_'+str(basis)
-            if image_reconst!=None:
-                do_noise_iteration(image_0,image_data,noise_img,\
-                        size_X,size_Y,\
-                        N1,N2,\
-                        coeff_0,label_arr,beta_array,\
-                        solver,\
-                        noise_scale,noise_img_num,\
-                        Num_of_shapelets = Num_of_shapelets, plot_decomp = True, n_max = n_max,\
-                        mid_word = mid_word)
-
+            prep_and_do_noise_iter(image_data,\
+                    noise_img, noise_img_num,noise_scale,\
+                    N1=N1,N2=N2,basis=basis,solver=solver,\
+                    image=None, coeff_0=None,\
+                    Num_of_shapelets=Num_of_shapelets, \
+                    select_img_idx = select_img_idx, plot_decomp = False,\
+                    n_max = n_max)
 
 
 if __name__=='__main__':
     
-    Num_of_shapelets_array = [15,21,28,36]
-    methods = ['lasso', 'sparse', 'svd', 'lstsq']
+    Num_of_shapelets_array = [21]
+    methods = ['lasso', 'omp', 'svd', 'lstsq']
     
     ## Range chose so that SNR is in range ~20 -- ~50
     noise_array = np.logspace(1.1, 1.5, 5)
     alpha_ = np.logspace(-5,-1.3,6)
-    basis_array = ['Elliptical', 'Polar', 'XY', 'Compound']
+    basis_array = ['XY_Elliptical', 'Polar_Elliptical','Polar', 'XY', 'Compound']
 
     # Generate noisy images
     # galsim images are 78 x 78
@@ -247,11 +285,11 @@ if __name__=='__main__':
     for i in xrange(noisy_mat_num):
         noise_matrix[:,i] = np.random.randn(size_X*size_Y)
 
-    for noise_scale in noise_array:
+    for noise_scale in [noise_array[:1], noise_array[-1:]]:
         # Select a method for fitting the coefficients
-        for basis in basis_array:
+        for basis in [basis_array[1]]:
             
-            for solver in ['svd']:#range(len(methods)): 
+            for solver in ['omp']:#range(len(methods)): 
 
                 test_stability(solver, basis, \
                         noise_scale, noise_img = noise_matrix, noise_img_num = noisy_mat_num,\

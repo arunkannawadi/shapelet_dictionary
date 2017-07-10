@@ -10,6 +10,12 @@ from utils.shapelet_utils import *
 
 #import pdb; pdb.set_trace()
 
+## Flag for comparison with the omp, probably not using
+## it in any pipeline computation
+
+flag_compare = False
+
+
 def asses_diff(new_coefs, old_coefs):
     """
     Calculate the relative difference in coefficients
@@ -49,7 +55,28 @@ def sparse_solver(D, signal, N1,N2, Num_of_shapelets = None):
     return sparse_coefs, sparse_reconst, sparse_residual, \
             residual_energy_fraction, recovered_energy_fraction, n_nonzero_coefs
 
-def solver_SVD(D, n_nonzero, signal):
+def decide_nonzero(sigma_arr, max_sigma, take_nonzero, epsilon):
+
+    """
+    Returns the least conservative number of shapelets
+    for the svd cut
+    """
+
+    n_nonzero = 0
+
+    clip_sigma = max_sigma * epsilon
+    ## Look how many values get discarded by epsilon cut
+    len_clip_sigma = len(np.where(sigma_arr >= clip_sigma)[0])
+
+    if (len_clip_sigma > take_nonzero):
+        ## Return the values which are not less than clip_sigma
+        return sigma_arr[np.where(sigma_arr > clip_sigma)]
+    else:
+        ## Otherwise if I throw out less of the coefs by take_nonzero
+        ## then just return first nonzero // biggest nonzero
+        return sigma_arr[:take_nonzero]
+
+def solver_SVD(D, signal, take_nonzero = 21, epsilon = 0.01, decomp_method = 'Dual'):
 
     """ Find appropriate coefficients for basis vectors contained in D, reconstruct image,
     calculate residual and residual and energy fraction using the Singular Value Decomposition
@@ -60,32 +87,50 @@ def solver_SVD(D, n_nonzero, signal):
     """
 
     rows_SVD, columns_SVD = np.shape(D)
-    U, s, VT = linalg.svd(D, full_matrices = True)    
+    U, s0, VT = linalg.svd(D, full_matrices = True)    
   
     ## Count in only n_nonzero signular values set rest to zero
-    s[n_nonzero:] = 0 
+    ## it seems the No of dominant ones is the same as the No of shapelets
+    ## in the basis    
+    ## Filter out corresponding columns in VT / rows in U / singular values in s
+    s = decide_nonzero(s0, max(s0), take_nonzero, epsilon)
+    n_nonzero = len(s)
+
+    print 'Biggest trashed value: ', s0[n_nonzero]
+    
+    ## Rows of V span the row space of D
+    VT[:,n_nonzero:] = 0
+    ## Columns of U span the column space of D
+    U[:,n_nonzero:] = 0
     
     ## In the docs it is said that the matrix returns V_transpose and not V 
     V = VT.transpose() 
-    
     ## Initialize diagonal matrices for singular values
-    S = np.zeros(D.shape)
-    S_dual = np.zeros(D.shape)
+    S = np.zeros_like(D)
+    S_dual = np.zeros_like(D)
 
     ## Put singular values on the diagonal
     for i in xrange(n_nonzero):
         S[i,i] = s[i]
         S_dual[i,i] = 1./s[i]
-   
-    coeffs_SVD = np.dot(V, np.dot(S_dual.transpose(), np.dot(U.transpose(),signal)))
-    
-    ## There are some residual values from V which are a lot smaller then
-    ## the chosen n_nonzero coeffs, so I just set them to zero
-    coeffs_SVD_r = np.zeros_like(coeffs_SVD)
-    ## Get indices of n_nonzero largest by absolute value
-    idx_n_nonzero = np.abs(coeffs_SVD).argsort()[-n_nonzero:][::-1]
-    ## Store them in the resultant coeff array
-    coeffs_SVD_r[idx_n_nonzero] = coeffs_SVD[idx_n_nonzero]
+ 
+    if decomp_method == 'Dual':
+        coeffs_SVD_r = np.dot(V, np.dot(S_dual.transpose(), np.dot(U.transpose(),signal)))
+    elif decomp_method == 'Pseudo_Inverse':
+        ## Initialize the coeffs array
+        coeffs_SVD_r = np.zeros(D.shape[1])
+        ## Make the coefficient vector with the pseudo inverse of 
+        ## the SVD matrix
+        E = D[:,:n_nonzero]
+        ET = E.transpose()
+        Mat_sudo_inv = linalg.inv(np.dot(ET,E))
+        ## Fill the rest values to zero and reshape the matrix ET to 
+        ## appropriate shape for multiplication with signal
+
+        coeffs_SVD_tmp = np.dot(Mat_sudo_inv,np.dot(ET,signal))
+        ## Mat_sudo_inv is [n_nonzero X n_nonzero] so for the latter
+        ## reconstruction this needs to be set
+        coeffs_SVD_r[:n_nonzero] = coeffs_SVD_tmp
 
     n_nonzero_coefs_SVD = np.count_nonzero(coeffs_SVD_r)
     reconstruction_SVD = np.dot(D,coeffs_SVD_r)
@@ -115,7 +160,7 @@ def solver_lstsq(D, signal):
     return coeffs_lstsq, reconstruction_lstsq, residual_lstsq, \
             residual_energy_fraction_lstsq, recovered_energy_fraction_lstsq, n_nonzero_coefs_lstsq
 
-def solver_lasso_reg(D, signal, alpha = None):
+def solver_lasso_reg(D, n_nonzero, signal, alpha = None):
     
     """Find appropriate basis coefficients for the vectors inside basis matrix D
     reconstruct the image, calculate residual and energy and residual fraction with 
@@ -128,9 +173,19 @@ def solver_lasso_reg(D, signal, alpha = None):
     if (alpha == None):
         alpha = 0.001
     
-    lasso_fit = linear_model.Lasso(alpha = alpha, max_iter=10000, fit_intercept = False).fit(D, signal)
+    lasso_fit = linear_model.Lasso(alpha = alpha, max_iter=1000, fit_intercept = False).fit(D, signal)
     coeffs_lasso = lasso_fit.coef_
+   
+    ## Just for comparison of top 21 with the omp
+    ## Don't do this otherwise
+    if flag_compare:
+        coeffs_lasso1 = np.zeros_like(coeffs_lasso)
+        idx_n_nonzero = np.abs(coeffs_lasso).argsort()[-n_nonzero:][::-1]
+        coeffs_lasso1[idx_n_nonzero] = coeffs_lasso[idx_n_nonzero]
+        coeffs_lasso = coeffs_lasso1
+
     reconstruction_lasso = np.dot(D, coeffs_lasso)
+    
     residual_lasso = signal - reconstruction_lasso
     residual_energy_fraction_lasso = np.sum(residual_lasso**2)/np.sum(signal**2)
     recovered_energy_fraction_lasso = np.sum(reconstruction_lasso**2)/np.sum(signal**2)
@@ -145,7 +200,7 @@ def select_solver_do_fitting_plot(\
         N1, N2, n_max, column_number, \
         image_initial, D, signal,solver, \
         beta_array,\
-        Num_of_shapelets = 10, alpha_ = 0.0001, plot_decomp = True):
+        Num_of_shapelets = 10, alpha_ = 0.0001, plot = True):
     
     ## Default for foler path
     folder_path_word = ""
@@ -156,7 +211,7 @@ def select_solver_do_fitting_plot(\
             +'_'+str(n_max)+'_'+basis+'_'+ str(column_number) + '_'
 
     ## Sparse solver
-    if (solver == 'sparse'):
+    if (solver == 'omp'):
         
         ## Include symmetric number of shapelets
         ## symmetrize the number chosen
@@ -166,8 +221,8 @@ def select_solver_do_fitting_plot(\
             residual_energy_fraction, recovered_energy_fraction, \
             n_nonzero_coefs = sparse_solver(D, signal, N1,N2,Num_of_shapelets)
          
-        mid_path_word = str(Num_of_shapelets) + '_' + basis
-        end_word = str(Num_of_shapelets)
+        mid_path_word = str(n_nonzero_coefs) + '_' + basis
+        end_word = str(n_nonzero_coefs)
         folder_path_word = f_path + solver + '/' + mid_path_word +'/'
 
     ## SVD solver // following berry approach
@@ -175,11 +230,10 @@ def select_solver_do_fitting_plot(\
         
         coeffs, reconst, residual, \
         residual_energy_fraction, recovered_energy_fraction, \
-        n_nonzero_coefs = solver_SVD(D, Num_of_shapelets, signal) 
+        n_nonzero_coefs = solver_SVD(D,signal, \
+        decomp_method = 'Pseudo_Inverse', take_nonzero = Num_of_shapelets, epsilon=0.5) 
         
-        mid_path_word = str(Num_of_shapelets) + '_' + basis
-        end_word = str(Num_of_shapelets)
-        folder_path_word = f_path + solver + '/' + mid_path_word + '/'
+        mid_path_word = decomp_method + '_' + str(n_nonzero_coefs) + '_' + basis
 
     ## Ordinary least squares solver
     elif (solver == 'lstsq'):  
@@ -188,18 +242,22 @@ def select_solver_do_fitting_plot(\
         residual_energy_fraction, recovered_energy_fraction, \
         n_nonzero_coefs = solver_lstsq(D, signal) 
 
+        mid_path_word = str(n_nonzero_coefs) + '_' + basis
         folder_path_word = f_path + solver + '/' 
     
     elif (solver == 'lasso'): #This is with the Lasso regularization
            
         coeffs, reconst, residual, \
             residual_energy_fraction, recovered_energy_fraction, \
-            n_nonzero_coefs = solver_lasso_reg(D, signal, alpha_)
+            n_nonzero_coefs = solver_lasso_reg(D, Num_of_shapelets,signal, alpha_)
     
-        mid_path_word = str("%.3e" % (alpha_))
+        mid_path_word = str("%.3e" % (alpha_)) + '_'+ str(n_nonzero_coefs) + '_' + basis
         folder_path_word = f_path + solver + '/' + mid_path_word + '/'           
 
-        
+    
+    end_word = str(n_nonzero_coefs)
+    folder_path_word = f_path + solver + '/' + mid_path_word + '/'
+ 
     if (noise_scale == 0):
         coefs_plot = coeffs
     else:
@@ -211,7 +269,7 @@ def select_solver_do_fitting_plot(\
     ## size_X and size_Y should be the size of the initial image
     size_X = image_initial.shape[0]
     size_Y = image_initial.shape[1]
-    if plot_decomp == True:
+    if plot == True:
         plot_solution(basis, N1,N2,image_initial,size_X,size_Y, \
             reconst, residual, coefs_plot,\
             recovered_energy_fraction, residual_energy_fraction, n_nonzero_coefs, \
