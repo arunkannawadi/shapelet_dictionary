@@ -10,7 +10,7 @@ from utils.galsim_utils import *
 from utils.I_O_utils import *
 from utils.shapelet_utils import *
 
-#import pdb; pdb.set_trace()
+import pdb; pdb.set_trace()
 
 
 def do_noise_iteration(image_0,image_data,noise_img,\
@@ -20,8 +20,8 @@ def do_noise_iteration(image_0,image_data,noise_img,\
         solver,\
         noise_scale,noise_img_num,\
         Num_of_shapelets = 15, alpha = 0.0001,\
-        plot_decomp = True, \
-        select_img_idx = 91, n_max = 21, \
+        plot_decomp = True,\
+        n_max = 21, \
         mid_word = ''):
     """
     Do the noise iterations and test the shapelet coefficients stability \
@@ -69,8 +69,8 @@ def do_noise_iteration(image_0,image_data,noise_img,\
                     N1=N1,N2=N2,basis=basis,solver=solver,\
                     image=image, coeff_0=coeff_0, noise_scale=signal_to_noise,\
                     Num_of_shapelets = Num_of_shapelets, alpha_ = alpha,\
-                    plot_decomp = True,\
-                    select_img_idx = select_img_idx, n_max = n_max,\
+                    plot_decomp = plot_decomp,beta_array = beta_arr,\
+                    n_max = n_max,\
                     column_number = i)
             
             if np.all(coeffs_curr != None):
@@ -100,20 +100,26 @@ def get_observed_image_decomp(\
     galsim_image = galsim.Image(img_, scale = 1.0)
     shape = galsim_image.FindAdaptiveMom()
     
+    image_data = np.zeros(5)
     x0,y0,sigma,beta,q = get_moments(shape)
-    ## Alter beta for test
-    image_data = [x0,y0,sigma,beta,q]
+    image_data[0] = x0; image_data[1] = y0; image_data[2] = sigma;
+    image_data[3] = beta; image_data[4] = q
+
+    if 'Compound' in basis:
+        beta_array = np.asarray([sigma/4., sigma/2., sigma, sigma*2, sigma*4])
+    else:
+        beta_array = np.asarray([sigma])
 
     f_path = 'Plots/Observed/'
     mkdir_p(f_path)
 
-    foo,foo,foo,foo,foo =\
+    foo,foo =\
             shapelet_decomposition(image_data,\
             f_path = f_path,\
             N1=N1,N2=N2,basis=basis,solver=solver,\
             image=img_obs, coeff_0=None, noise_scale=0.,\
             Num_of_shapelets=Num_of_shapelets, alpha_ = alpha, \
-            select_img_idx = select_img_idx, plot_decomp = True,\
+            plot_decomp = True, beta_array = beta_array,\
             n_max = n_max)
 
 def prep_and_do_noise_iter(image_data,\
@@ -127,15 +133,30 @@ def prep_and_do_noise_iter(image_data,\
     ## Make the no noise image
     f_path = 'Plots/' + str("%.3e" % (0.0)) + '/'
     mkdir_p(f_path)
+    
+    cube = pyfits.getdata('../../data/cube_real_noiseless.fits')
+    background = 1.e6*0.16**2
+    
+    img = cube[select_img_idx] - background
+    galsim_img = galsim.Image(img, scale = 1.0)
+    
+    shape_data = galsim_img.FindAdaptiveMom()
+    x0,y0,sigma,beta,q = get_moments(shape_data)
+    image_data = [x0,y0,sigma,beta,q]
 
-    image_0, image_reconst, coeff_0, label_arr, beta_array =\
-                shapelet_decomposition(image_data,\
-                f_path = f_path,\
-                N1=N1,N2=N2,basis=basis,solver=solver,\
-                image=None, coeff_0=None, noise_scale=0,\
-                Num_of_shapelets=Num_of_shapelets, alpha_ = alpha, \
-                select_img_idx = select_img_idx, plot_decomp = True,\
-                n_max = n_max)
+    if 'Compound' in basis:
+        beta_array = np.asarray([sigma/4., sigma/2., sigma, sigma*2, sigma*4])
+    else:
+        beta_array = np.asarray([sigma])
+    
+    image_reconst, coeff_0, label_arr =\
+            shapelet_decomposition(image_data,\
+            f_path = f_path,\
+            N1=N1,N2=N2,basis=basis,solver=solver,\
+            image=img, coeff_0=None, noise_scale=0,\
+            Num_of_shapelets=Num_of_shapelets, alpha_ = alpha, \
+            plot_decomp = True, make_labels = True,\
+            n_max = n_max, beta_array = beta_array)
     
     if solver != 'lstsq':
         mid_word = str(\
@@ -147,15 +168,15 @@ def prep_and_do_noise_iter(image_data,\
 
     ## If 0 noise decomp. fails don't do anything
     if (np.all(image_reconst != None)):
-        do_noise_iteration(image_0,image_data,noise_img,\
+        do_noise_iteration(img,image_data,noise_img,\
                 size_X,size_Y,\
                 N1,N2,\
                 coeff_0,label_arr,beta_array,\
                 solver,\
                 noise_scale,noise_img_num,\
                 Num_of_shapelets = Num_of_shapelets, alpha=alpha, \
-                plot_decomp = True, \
-                select_img_idx = select_img_idx, n_max = n_max,\
+                plot_decomp = False, \
+                n_max = n_max,\
                 mid_word = mid_word)
 
 def test_stability(solver, basis, \
@@ -274,7 +295,7 @@ if __name__=='__main__':
     ## Range chose so that SNR is in range ~20 -- ~50
     noise_array = np.logspace(1.1, 1.5, 5)
     alpha_ = np.logspace(-5,-1.3,6)
-    basis_array = ['XY_Elliptical', 'Polar_Elliptical','Polar', 'XY', 'Compound']
+    basis_array = ['XY_Elliptical', 'Polar_Elliptical','Polar', 'XY', 'Compound_XY','Compound_Polar']
 
     # Generate noisy images
     # galsim images are 78 x 78
@@ -287,7 +308,7 @@ if __name__=='__main__':
 
     for noise_scale in [noise_array[:1], noise_array[-1:]]:
         # Select a method for fitting the coefficients
-        for basis in [basis_array[1]]:
+        for basis in [basis_array[-2]]:
             
             for solver in ['omp']:#range(len(methods)): 
 

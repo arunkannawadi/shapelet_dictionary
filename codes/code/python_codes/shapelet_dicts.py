@@ -15,7 +15,7 @@ from scipy.integrate import quad
 from utils.shapelet_utils import *
 from utils.galsim_utils import *
 
-import pdb; pdb.set_trace()
+#import pdb; pdb.set_trace()
 
 ## About the warning of the a lot of images
 #import matplotlib
@@ -49,14 +49,22 @@ def check_orthonormality():
 def calculate_spark(D):
     pass
 
-def show_some_shapelets(M=4,N=4):
+def show_some_shapelets(M=4,N=4, theta = 0.):
     fig,ax = plt.subplots(M,N)
-    X = np.linspace(-8,8,17)
-    Y = np.linspace(-8,8,17)
-    Xv,Yv = np.meshgrid(X,Y)
+    X0 = np.linspace(-8,8,17)
+    Y0 = np.linspace(-8,8,17)
+    
+    X = X0*np.cos(theta) + Y0*np.sin(theta)
+    Y = -X0*np.sin(theta) + Y0*np.cos(theta)
+    
+    Xv,Yv = np.meshgrid(X0,Y0)
+    
+    #Xv = Xv0*np.cos(theta) + Yv0*np.sin(theta)
+    #Yv = Yv0*np.cos(theta) - Xv0*np.sin(theta)
+    
     for m in xrange(M):
       for n in xrange(M):
-        arr = elliptical_shapelet(m,n,sx=1.,sy=1.,theta=1.*np.pi/4.)(Xv,Yv)
+        arr = elliptical_shapelet(m,n,sx=1.,sy=1.,theta=theta)(Xv,Yv)
         ax[m,n].imshow(arr,cmap=cm.bwr,vmax=1.,vmin=-0.5)
         ax[m,n].set_title(str(m)+','+str(n))
     plt.savefig('test.png')
@@ -66,7 +74,8 @@ def shapelet_decomposition(image_data,\
         N1=20,N2=20, basis = 'XY', solver = 'omp', image = None, \
         coeff_0 = None, noise_scale = None, \
         alpha_ = None, Num_of_shapelets = 21, \
-        select_img_idx = 91, n_max = None,\
+        make_labels = False,\
+        n_max = None,\
         column_number = 1.01, plot_decomp= False, \
         beta_array = [1.5, 2, 2.5]):
 
@@ -106,200 +115,193 @@ def shapelet_decomposition(image_data,\
     theta : Direction angle of the ellipse
 
     """
-    ## Flag for test stability
-    ## controling the change of image_data nad label_arr and cube
-    flag_test = False
-    ## Obtaining galaxy images
+    
+    ## Obtaining galaxy image if none is provided
     if np.all(image == None):
         ## Aquireing the noiseless image
         flag_test = True
-        cube = pyfits.getdata('../../data/cube_real_noiseless.fits')
+        ## Select image 91 from the cube_real_noiseless.fits file
+        image = pyfits.getdata('../../data/cube_real_noiseless.fits')[91]
+        ## This is the background value for the galsim array images
         background = 1.e6*0.16**2
-        img = galsim.Image(78,78) # cube has 100, 78x78 images
-        size_X = 78; size_Y = 78
-        pick_an_img = [select_img_idx]
+        image -= background
+        size_X = image.shape[0]; size_Y = image.shape[1] 
     else:
-        ## Added this part for stability test with noise
-        ## Background is zero because I already substracted background in the first decomp
-        size_X = np.shape(image)[0]; size_Y = np.shape(image)[1]
-        cube = [image]
-        background = 0
-        pick_an_img = [0] 
+        ## If an image is provided then procede here 
+        size_X = image.shape[0]; size_Y = image.shape[1]
 
     X = np.linspace(0,size_X-1,size_X)  
-    Y = np.linspace(0,size_Y-1,size_Y)
-
-    for img_idx in pick_an_img:
-
-        ## Take the image, reduce for background, find moments set n_max
-
-        cube[img_idx] -= background
-        
-        ## Just for checking plot the chosen image
-        if noise_scale == 0:
-            if (os.path.isfile('Plots/Initial_image_stability.png')):
-                pass
-            else:
-                from pylab import imshow
-                imshow(cube[img_idx])
-                plt.savefig('Plots/Initial_image_stability.png')
-                plt.clf() 
-        
-        img = galsim.Image(cube[img_idx],scale = 1.0, xmin=0,ymin=0)
- 
-        ## Here catch an exception and exit the function if the FindAdaptiveMom doesn't converge
-        try:
-            shape = img.FindAdaptiveMom() #strict = False, watch out for failure, try block
-        except RuntimeError as error:
-            print("RuntimError: {0}".format(error))
-            if noise_scale == 0:
-                return [None]*5
-            else:
-                return [None]*2
-        
-        ## Remember this from the 0 noise image
-        if flag_test:
-            x0, y0, sigma, theta, q = get_moments(shape)
-            image_data[0] = x0; image_data[1] = y0; image_data[2] = sigma
-            image_data[3] = theta; image_data[4] = q
+    Y = np.linspace(0,size_Y-1,size_Y) 
+         
+    ## Just for checking plot the chosen image
+    if noise_scale == 0:
+        if (os.path.isfile('Plots/Initial_image_stability.png')):
+            pass
         else:
-            x0 = image_data[0]
-            y0 = image_data[1]
-            sigma = image_data[2] 
-            theta = image_data[3]
-            q = image_data[4]
-        
+            from pylab import imshow
+            imshow(image)
+            plt.savefig('Plots/Initial_image_stability.png')
+            plt.clf() 
+    
+    img_galsim = galsim.Image(image,scale = 1.0, xmin=0,ymin=0)
+
+    ## Here catch an exception and exit the function if the FindAdaptiveMom doesn't converge
+    try:
+        shape = img_galsim.FindAdaptiveMom() #strict = False, watch out for failure, try block
+    except RuntimeError as error:
+        print("RuntimError: {0}".format(error))
+        if noise_scale == 0:
+            return [None]*5
+        else:
+            return [None]*2
+    
+    ## Remember this from the 0 noise image
+    if np.all(image_data == 0):
+        x0, y0, sigma, theta, q = get_moments(shape) 
+        image_data[0] = x0; image_data[1] = y0; image_data[2] = sigma
+        image_data[3] = theta; image_data[4] = q
         ## In order for function calls to be consistent
         ## Make this array even if the basis is not 'Compound'
         ## To enable correct plotting
-        if basis == 'Compound':
+        if ('Compound' in basis):
             beta_array = [sigma/4.,sigma/2., sigma, 2*sigma, 4*sigma]
         else:
             beta_array = [sigma]
+    else:
+        x0 = image_data[0]
+        y0 = image_data[1]
+        sigma = image_data[2] 
+        theta = image_data[3]
+        q = image_data[4]
 
-        ## Initialize the basis matrix size and base_coefs sizes according
-        ## to the basis used
-        if (basis == 'XY') or (basis == 'XY_Elliptical'):
-            D = np.zeros((size_X*size_Y,N1*N2)) # alloc for Dictionary
-            base_coefs = np.zeros((N1,N2))
-        elif (basis == 'Polar') or (basis == 'Polar_Elliptical'):
-            D = np.zeros((size_X*size_Y,N1*N2))#, dtype=complex)
-            base_coefs = np.zeros(N1*N2)#, dtype=complex)
-        elif (basis == 'Compound'):
+    ## Initialize the basis matrix size and base_coefs sizes according
+    ## to the basis used
+    if ('XY' in basis):
+        if ('Compound' in basis):
             ## D must be this size because different betas are included
             D = np.zeros((size_X*size_Y, len(beta_array)*N1*N2))
             ## base_coefs must be this size for the representation
             base_coefs = np.zeros((N1,N2*len(beta_array)))
+        else:
+            D = np.zeros((size_X*size_Y,N1*N2)) # alloc for Dictionary
+            base_coefs = np.zeros((N1,N2))
+    elif ('Polar' in basis):
+        if ('Compound' in basis):
+            D = np.zeros((size_X*size_Y,N1*N2*len(beta_array)))
+            base_coefs = np.zeros(N1*N2*len(beta_array))
+        else:
+            D = np.zeros((size_X*size_Y,N1*N2))
+            base_coefs = np.zeros(N1*N2)           
 
+    if n_max == None:
+        ## So that it is a complete triangle
+        ## Formula for a symmetric triangle is n * (n+2)
+        n_max = Num_of_shapelets
 
-        if n_max == None:
-            ## So that it is a complete triangle
-            ## Formula for a symmetric triangle is n * (n+2)
-            n_max = Num_of_shapelets
+    signal = image.flatten() 
+    shapelet_reconst = np.zeros((len(beta_array), size_X*size_Y))
+    residual = np.zeros((len(beta_array), size_X*size_Y))
+    residual_energy_fraction = np.zeros(len(beta_array))
+    recovered_energy_fraction = np.zeros(len(beta_array))
+    ## -------------------------------------------------------------
+    ## Labeling could also be done inside the plot_stability routine
+    ## just take the index of coeff_stability:
+    ## k --> n = k/N1, m = k%N1 for cartesian
+    ## k --> n,m = from indices in the adapted pascal triangle for polar
+    ## -------------------------------------------------------------
+    label_arr = np.chararray(D.shape[1], itemsize=10)
 
-        signal = cube[img_idx].flatten() 
-        shapelet_reconst = np.zeros((len(beta_array), size_X*size_Y))
-        residual = np.zeros((len(beta_array), size_X*size_Y))
-        residual_energy_fraction = np.zeros(len(beta_array))
-        recovered_energy_fraction = np.zeros(len(beta_array))
-        ## -------------------------------------------------------------
-        ## Labeling could also be done inside the plot_stability routine
-        ## just take the index of coeff_stability:
-        ## k --> n = k/N1, m = k%N1 for cartesian
-        ## k --> n,m = from indices in the adapted pascal triangle for polar
-        ## -------------------------------------------------------------
-        label_arr = np.chararray(D.shape[1], itemsize=10)
+    ## Decompose into Polar/Polar_Elliptical / XY /XY_Elliptical / Compound / w/ inner product
+    if (basis == 'Polar') or (basis == 'Polar_Elliptical'):
+        shapelet_reconst[0] = decompose_polar(basis,\
+                D,base_coefs,\
+                shapelet_reconst[0], signal, make_labels, \
+                label_arr,\
+                n_max, N1,N2,\
+                x0,y0,sigma,\
+                X,Y,\
+                q=q, theta = theta)
+    elif (basis == 'XY') or (basis == 'XY_Elliptical'):
+        shapelet_reconst[0] = decompose_cartesian(basis,\
+                D,base_coefs,\
+                shapelet_reconst[0], signal, make_labels, \
+                label_arr,\
+                n_max,N1,N2,\
+                x0,y0,sigma,\
+                X,Y,\
+                q=q,theta = theta)
 
-        ## Decompose into Polar/Polar_Elliptical / XY /XY_Elliptical / Compound / w/ inner product
-        if (basis == 'Polar') or (basis == 'Polar_Elliptical'):
-            shapelet_reconst[0] = decompose_polar(basis,\
-                    D,base_coefs,\
-                    shapelet_reconst[0], signal, flag_test, \
-                    label_arr,\
-                    n_max, N1,N2,\
-                    x0,y0,sigma,\
-                    X,Y,\
-                    q=q, theta = theta)
-        elif (basis == 'XY') or (basis == 'XY_Elliptical'):
-            shapelet_reconst[0] = decompose_cartesian(basis,\
-                    D,base_coefs,\
-                    shapelet_reconst[0], signal, flag_test, \
-                    label_arr,\
-                    n_max,N1,N2,\
-                    x0,y0,sigma,\
-                    X,Y,\
-                    q=q,theta = theta)
-
-        elif(basis == 'Compound'):
-            
-            shapelet_reconst = decompose_compound(basis,\
-                    D,base_coefs,beta_array, \
-                    shapelet_reconst, signal, flag_test, \
-                    label_arr,\
-                    n_max, N1,N2,\
-                    x0,y0,sigma,\
-                    X,Y,\
-                    polar_basis = 'refregier',\
-                    q=q, theta = theta)
+    elif (basis == 'Compound_XY') or (basis == 'Compound_Polar'):
         
-        for i in xrange(len(beta_array)):
-            residual[i]= signal - shapelet_reconst[i]
-            residual_energy_fraction[i] = np.sum(residual[i]**2)/np.sum(signal**2)
-            recovered_energy_fraction[i] = np.sum(shapelet_reconst[i]**2)/np.sum(signal**2)
+        shapelet_reconst = decompose_compound(basis,\
+                D,base_coefs,beta_array, \
+                shapelet_reconst, signal, make_labels, \
+                label_arr,\
+                n_max, N1,N2,\
+                x0,y0,\
+                X,Y,\
+                polar_basis = 'refregier',\
+                q=q, theta = theta)
+    
+    for i in xrange(len(beta_array)):
+        residual[i]= signal - shapelet_reconst[i]
+        residual_energy_fraction[i] = np.sum(residual[i]**2)/np.sum(signal**2)
+        recovered_energy_fraction[i] = np.sum(shapelet_reconst[i]**2)/np.sum(signal**2)
 
-        if basis =='Polar' or basis == 'Polar_Elliptical':
-            print "Comparing moments_amp to base_coefs[0]: ", \
-                    np.abs(base_coefs[0]), shape.moments_amp
-            print "Base coefficients sum over signal", \
-                (np.sum(base_coefs**2))/(np.sum(signal**2)), \
-                (np.sum(residual**2)/np.sum(signal**2)) 
-        else:
-            print "Comparing moments_amp to base_coefs[0,0]", \
-                    np.abs(base_coefs[0,0]), shape.moments_amp
-            print "Base coefficients sum over signal", \
-                (np.sum(base_coefs**2))/(np.sum(signal**2)), \
-                (np.sum(residual**2)/np.sum(signal**2)) 
+    if 'Polar' in basis:
+        print "Comparing moments_amp to base_coefs[0]: ", \
+                np.abs(base_coefs[0]), shape.moments_amp
+        print "Base coefficients sum over signal", \
+            (np.sum(base_coefs**2))/(np.sum(signal**2)), \
+            (np.sum(residual**2)/np.sum(signal**2)) 
+    else:
+        print "Comparing moments_amp to base_coefs[0,0]", \
+                np.abs(base_coefs[0,0]), shape.moments_amp
+        print "Base coefficients sum over signal", \
+            (np.sum(base_coefs**2))/(np.sum(signal**2)), \
+            (np.sum(residual**2)/np.sum(signal**2)) 
 
-        ## Make the strings for nice representation in the output
+    ## Make the strings for nice representation in the output
+    if noise_scale != None:
         noise_scale_str = str("%.3e" % (noise_scale))
-        if (alpha_ != None):
-            alpha_str = str("%.3e" % (alpha_))
+    else:
+        noise_scale_str = ""
 
-        mkdir_p(f_path + 'Decomp/')
-        if (plot_decomp == True):
-            
-            file_path_check = \
-                    f_path + \
-                    'Decomp/' + basis +'_'\
-                    +str(n_max) + '_' + str(column_number) +'_.png'
-            
-            ## Check if there is already the XY decomp
-            if (os.path.isfile(file_path_check) == False) and flag_test:
-                
-                ## Plot the inner product decomposition only once
+    if (alpha_ != None):
+        alpha_str = str("%.3e" % (alpha_))
 
-                plot_decomp = False
-                plot_decomposition(basis, cube, img_idx, size_X, size_Y, \
-                        base_coefs, N1, N2,\
-                        shapelet_reconst, signal, \
-                        residual, residual_energy_fraction ,recovered_energy_fraction, \
-                        f_path + 'Decomp/_' + basis +'_'\
-                        +str(n_max) + '_' + str(column_number),\
-                        beta_array = beta_array)
+    mkdir_p(f_path + 'Decomp/')
+    if (plot_decomp == True):
+        
+        file_path_check = \
+                f_path + \
+                'Decomp/' + basis +'_'\
+                +str(n_max) + '_' + str(column_number) +'_.png'
+        
+        ## Check if there is already a decomp plot
+        if not(os.path.isfile(file_path_check)):
 
-        reconst, coeffs = select_solver_do_fitting_plot(\
-                f_path, basis, coeff_0, noise_scale, \
-                N1,N2,n_max,column_number,\
-                cube[img_idx],D,signal,solver, beta_array,\
-                Num_of_shapelets = Num_of_shapelets, alpha_ = alpha_, plot = True)
+            plot_decomposition(basis, image, size_X, size_Y, \
+                    base_coefs, N1, N2,\
+                    shapelet_reconst, signal, \
+                    residual, residual_energy_fraction ,recovered_energy_fraction, \
+                    f_path + 'Decomp/_' + basis +'_'\
+                    +str(n_max) + '_' + str(column_number),\
+                    beta_array = beta_array)
 
-        if noise_scale == 0:
-            return cube[img_idx], reconst, coeffs, label_arr, beta_array
-        else:
-            return reconst, coeffs
+    reconst, coeffs = select_solver_do_fitting_plot(\
+            f_path, basis, coeff_0, noise_scale, \
+            N1,N2,n_max,column_number,\
+            image,D,signal,solver, beta_array,\
+            Num_of_shapelets = Num_of_shapelets, alpha_ = alpha_, plot = True)
+
+    if make_labels == True:
+        return reconst, coeffs, label_arr
+    else:
+        return reconst, coeffs
 
 if __name__ == "__main__":   
     
-    show_some_shapelets()
+    show_some_shapelets(theta = 4*np.pi/3.)
     #p_shapelet.plot_shapelets(6,2,1)
     #check_orthonormality()

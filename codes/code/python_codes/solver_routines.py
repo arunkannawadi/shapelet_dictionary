@@ -96,12 +96,12 @@ def solver_SVD(D, signal, take_nonzero = 21, epsilon = 0.01, decomp_method = 'Du
     s = decide_nonzero(s0, max(s0), take_nonzero, epsilon)
     n_nonzero = len(s)
 
-    print 'Biggest trashed value: ', s0[n_nonzero]
+    print 'Biggest trashed singular value: ', s0[n_nonzero]
     
     ## Rows of V span the row space of D
-    VT[:,n_nonzero:] = 0
+    #VT[:,n_nonzero:] = 0
     ## Columns of U span the column space of D
-    U[:,n_nonzero:] = 0
+    #U[:,n_nonzero:] = 0
     
     ## In the docs it is said that the matrix returns V_transpose and not V 
     V = VT.transpose() 
@@ -115,22 +115,63 @@ def solver_SVD(D, signal, take_nonzero = 21, epsilon = 0.01, decomp_method = 'Du
         S_dual[i,i] = 1./s[i]
  
     if decomp_method == 'Dual':
-        coeffs_SVD_r = np.dot(V, np.dot(S_dual.transpose(), np.dot(U.transpose(),signal)))
+        coeffs_SVD_r = np.dot(V, np.dot(S_dual.transpose(), np.dot(U.transpose(),signal))) 
+        ## If it is prefered to select top n_nonzero coefs
+        if n_nonzero < len(np.where(coeffs_SVD_r != 0)[0]):
+            sorted_indices = np.abs(coeffs_SVD_r).argsort()
+            print "Dual"
+            print "Biggest thrown out coeff: ", coeffs_SVD_r[sorted_indices[-(n_nonzero+1)]]
+            idx_nonzero = sorted_indices[-n_nonzero:]
+            for i in xrange(len(coeffs_SVD_r)):
+                if not(i in idx_nonzero):
+                    coeffs_SVD_r[i] = 0
+
     elif decomp_method == 'Pseudo_Inverse':
         ## Initialize the coeffs array
+        
         coeffs_SVD_r = np.zeros(D.shape[1])
+        
+        ## Shrink the matrix and select only the nonzero columns
+        ## the zero columns are the consequence of the construction
+        ## of the basis matrix
+        
+        idx_col = []
+        for j in xrange(D.shape[1]):
+            ## If the column has a shapelet vector inside
+            ## take it
+            if (len(np.where(D[:,j]!=0)[0]) != 0):
+                idx_col.append(j)
+        idx_col = np.asarray(idx_col)
+        
         ## Make the coefficient vector with the pseudo inverse of 
         ## the SVD matrix
-        E = D[:,:n_nonzero]
+        
+        E = D[:,idx_col]
         ET = E.transpose()
-        Mat_sudo_inv = linalg.inv(np.dot(ET,E))
-        ## Fill the rest values to zero and reshape the matrix ET to 
-        ## appropriate shape for multiplication with signal
-
+        
+        Mat_sudo_inv = linalg.inv(np.dot(ET,E)) 
         coeffs_SVD_tmp = np.dot(Mat_sudo_inv,np.dot(ET,signal))
+        
         ## Mat_sudo_inv is [n_nonzero X n_nonzero] so for the latter
         ## reconstruction this needs to be set
-        coeffs_SVD_r[:n_nonzero] = coeffs_SVD_tmp
+        ## Map the coefficients back to the corresponding indices
+        ## of the resulting coefficient array
+        
+        i = 0
+        for idx in idx_col:
+            coeffs_SVD_r[idx] = coeffs_SVD_tmp[i]
+            i+=1
+        
+        ## If n_nonzero is different than the basis size
+        ## take n_nonzero biggest ones by abs value
+        if n_nonzero < len(idx_col):
+            sorted_indices = np.abs(coeffs_SVD_r).argsort()
+            idx_nonzero = sorted_indices[-n_nonzero:]
+            print "Pseudo Inverse"
+            print "Biggest thrown out coeff: ", coeffs_SVD_r[sorted_indices[-(n_nonzero+1)]]
+            for i in xrange(len(coeffs_SVD_r)):
+                if not(i in idx_nonzero):
+                    coeffs_SVD_r[i] = 0.
 
     n_nonzero_coefs_SVD = np.count_nonzero(coeffs_SVD_r)
     reconstruction_SVD = np.dot(D,coeffs_SVD_r)
@@ -206,7 +247,12 @@ def select_solver_do_fitting_plot(\
     folder_path_word = ""
     mid_path_word = ""
     end_word = ""
-    mid_name_word = '_solution_'+str("%.3e" % (noise_scale))+'_'\
+    if noise_scale != None:
+        mid_name_word = '_solution_'+str("%.3e" % (noise_scale))+'_'\
+            +str(N1)+'_'+str(N2)\
+            +'_'+str(n_max)+'_'+basis+'_'+ str(column_number) + '_'
+    else:
+        mid_name_word = '_solution_'\
             +str(N1)+'_'+str(N2)\
             +'_'+str(n_max)+'_'+basis+'_'+ str(column_number) + '_'
 
@@ -227,11 +273,12 @@ def select_solver_do_fitting_plot(\
 
     ## SVD solver // following berry approach
     elif (solver == 'svd'):
-        
+       
+        decomp_method = 'Dual'
         coeffs, reconst, residual, \
         residual_energy_fraction, recovered_energy_fraction, \
         n_nonzero_coefs = solver_SVD(D,signal, \
-        decomp_method = 'Pseudo_Inverse', take_nonzero = Num_of_shapelets, epsilon=0.5) 
+        decomp_method = decomp_method, take_nonzero = Num_of_shapelets, epsilon=0.01) 
         
         mid_path_word = decomp_method + '_' + str(n_nonzero_coefs) + '_' + basis
 
@@ -258,7 +305,7 @@ def select_solver_do_fitting_plot(\
     end_word = str(n_nonzero_coefs)
     folder_path_word = f_path + solver + '/' + mid_path_word + '/'
  
-    if (noise_scale == 0):
+    if (noise_scale == 0) or (noise_scale == None):
         coefs_plot = coeffs
     else:
         coefs_plot = asses_diff(coeffs,coeff_0)
