@@ -13,7 +13,7 @@ params = {'text.latex.preamble' : [r'\usepackage{siunitx}', \
                 r'\usepackage[utf8]{inputenc}', r'\usepackage{amsmath}']}
 plt.rcParams.update(params)
 
-#import pdb; pdb.set_trace()
+import pdb; pdb.set_trace()
 
 def coeff_plot2d(coeffs,N1,N2,\
         ax=None,fig=None,\
@@ -49,13 +49,13 @@ def coeff_plot2d(coeffs,N1,N2,\
         f.close()
 
     #coeffs_reshaped /= coeffs_reshaped.max()
-    im = ax.imshow(coeffs_reshaped,cmap=cm.bwr,interpolation='none')
+    im = ax.imshow(coeffs_reshaped,cmap=cm.bwr, interpolation='none')
     
     ## Force colorbars besides the axes
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size='5%')    
 
-    fig.colorbar(im,cax=cax,orientation=orientation)
+    fig.colorbar(im,cax=cax,format = '%.2e', orientation=orientation)
     return fig,ax
 
 def coeff_plot_polar(coeffs, N1,N2, \
@@ -91,6 +91,7 @@ def coeff_plot_polar(coeffs, N1,N2, \
     for n in xrange(N_range):
         for m in xrange(-n,n+1,2):
             x.append(n)
+            y.append(m)
             color_vals.append(coeffs[k])
             if coeffs[k] != 0:
                 f.write("%d\t%d\t%.3e\n" % (n,m, coeffs[k]))
@@ -98,37 +99,36 @@ def coeff_plot_polar(coeffs, N1,N2, \
         ## Make appropriate y coord
         ## So that the squares don't overlap
         ## and there is no white space between
-        y.append(np.linspace(-n/2.,n/2.,n+1))
+        #y.append(np.linspace(-n,n+1,2))
 
     f.close()
     ## Merge everything into one array of the same shape as x
     x = np.asarray(x)
-    y = np.concatenate(y[:])    
+    y = np.asarray(y)    
     color_vals = np.asarray(color_vals)
     ## Control the size of squares
     dx = [x[1]-x[0]]*len(x) 
     
     ## Get the range for the colorbar
-    norm = mpl.colors.Normalize(
+    norm = mpl.colors.Normalize(\
         vmin=np.min(color_vals),
         vmax=np.max(color_vals))
 
-    ## choose a colormap
-    c_m = colormap
-
     ## create a ScalarMappable and initialize a data structure
-    s_m = cm.ScalarMappable(cmap=c_m, norm=norm); s_m.set_array([])
+    s_m = cm.ScalarMappable(cmap=colormap, norm=norm); s_m.set_array([])
 
     if fig == None:
         fig, ax = plt.subplots()
     
     ax.set_ylabel('m')
     ax.set_xlabel('n')
-    ax.set_aspect('equal')
+    ax.set_aspect(aspect = 'auto', adjustable ='box')
     ax.axis([min(x)-1., max(x)+1., min(y)-1., max(y)+1.])
+    ax.minorticks_on()
+
     ## Change the labels to double the initial
     ## because the squares are not alligning properly // i have no better and easier sol than this
-    ax.set_yticklabels([str("%d" % (2*val)) for val in ax.get_yticks()])
+    #ax.set_yticklabels([str("%d" % (2*val)) for val in ax.get_yticks()])
     ## Normalize the values so that it is easier to plot
     color_vals = color_vals / np.max(color_vals)
 
@@ -136,15 +136,15 @@ def coeff_plot_polar(coeffs, N1,N2, \
     ## without any white spaces remaining
     for x,y,c,h in zip(x,y,color_vals,dx):
         ax.add_artist(\
-                Rectangle(xy=(x-h/2., y-h/2.),\
-                linewidth=3, color = colormap(c),\
-                width=h, height=h))
+                Rectangle(xy=(x-h/2., y-h),\
+                linewidth=1, color = s_m.to_rgba(c),\
+                width=h, height=2*h))
     
     ## Locate the axes for colorbar
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%")
 
-    fig.colorbar(s_m, cax = cax)
+    fig.colorbar(s_m, format = '%.2e', cax = cax)
     
     return fig, ax
 
@@ -307,7 +307,10 @@ def plot_decomposition(basis, image, size_X, size_Y, \
             divider10 = make_axes_locatable(ax[1,0])
             cax10 = divider10.append_axes("right", size="5%")
 
-            fig.colorbar(im00,cax=cax00); fig.colorbar(im01,cax=cax01); fig.colorbar(im10,cax=cax10)
+            fig.colorbar(im00,format = '%.2e', cax=cax00); 
+            fig.colorbar(im01,format = '%.2e', cax=cax01); 
+            fig.colorbar(im10,format = '%.2e', cax=cax10)
+
             ax[0,0].set_title('Original (noisy) image')
             ax[0,1].set_title('Reconstructed image - Frac. of energy = '\
                     +str(np.round(recovered_energy_fraction,4)))
@@ -411,23 +414,49 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
             divider10 = make_axes_locatable(ax2[1,0])
             cax10 = divider10.append_axes("right", size="5%")  
             
-            fig2.colorbar(im00,cax=cax00);
-            fig2.colorbar(im01,cax=cax01); fig2.colorbar(im10,cax=cax10)
+            fig2.colorbar(im00, format = '%.2e', cax=cax00);
+            fig2.colorbar(im01, format = '%.2e', cax=cax01); 
+            fig2.colorbar(im10, format = '%.2e', cax=cax10)
             ax2[0,0].set_title('Original (noisy) image'); 
             ax2[0,1].set_title('Reconstructed image - Frac. of energy = '\
                     +str(np.round(recovered_energy_fraction,4)))
                                 
             if flag:
+
+                #exp_sigma = r'$\displaystyle \cdot 10^{-2}$'
+                #token_sigma = "%.2e"
+                #get_len_sigma = 4
+
+                #str_err_sigma = str(token_sigma % (err_sigma_res))[:get_len_sigma]
+                #str_sigma = str(token_sigma % (sigma_res))[:get_len_sigma]
+
+                #exp_mu = r'$\displaystyle \cdot 10^{-2}$'
+                #token_mu = "%.2e"
+                #get_len_mu = 4
+
+                #str_mu = str(token_mu % (mu_res))[:get_len_mu]
+                #str_err_mu = str(token_mu % (err_mu_res))[:get_len_mu]
+
                 ax2[1,0].set_title(\
-                    ('Residual image - Frac. of energy = '\
+                    ('residual image - frac. of energy = '\
                     +str(np.round(residual_energy_fraction,4))\
                     + '\n' \
                     + r'$\displaystyle \sigma = $'\
-                    + '(%.2f' + r'$\pm$' + '%.2f)' \
+                    + '(%.2e' + r'$\pm$' + '%.2e)' \
                     + '\n' \
                     + r'$\displaystyle \mu = $'\
-                    + '(%.2f' + r'$\pm$' + '%.2f)') % \
+                    + '(%.2e' + r'$\pm$' + '%.2e)') % \
                     (sigma_res, err_sigma_res, mu_res, err_mu_res))
+                
+               # ax2[1,0].set_title(\
+               #     'Residual image - frac. of energy = '\
+               #     +str(np.round(residual_energy_fraction,4))\
+               #     + '\n' \
+               #     + r'$\displaystyle \sigma = $'\
+               #     + '(' + str_sigma + r'$\pm$' + str_err_sigma + ') ' + exp_sigma \
+               #     + '\n' \
+               #     + r'$\displaystyle \mu = $'\
+               #     + '('+ str_mu + r'$\pm$' + str_err_mu + ') ' + exp_mu) 
             else:
                 ax2[1,0].set_title(\
                     'Residual image - Frac. of energy = '\
