@@ -269,8 +269,6 @@ def select_solver_do_fitting_plot(\
          
         mid_path_word = str(n_nonzero_coefs) + '_' + basis
         end_word = str(n_nonzero_coefs)
-        folder_path_word = f_path + solver + '/' + mid_path_word +'/'
-
     ## SVD solver // following berry approach
     elif (solver == 'svd'):
        
@@ -290,7 +288,6 @@ def select_solver_do_fitting_plot(\
         n_nonzero_coefs = solver_lstsq(D, signal) 
 
         mid_path_word = str(n_nonzero_coefs) + '_' + basis
-        folder_path_word = f_path + solver + '/' 
     
     elif (solver == 'lasso'): #This is with the Lasso regularization
            
@@ -298,8 +295,7 @@ def select_solver_do_fitting_plot(\
             residual_energy_fraction, recovered_energy_fraction, \
             n_nonzero_coefs = solver_lasso_reg(D, Num_of_shapelets,signal, alpha_)
     
-        mid_path_word = str("%.3e" % (alpha_)) + '_'+ str(n_nonzero_coefs) + '_' + basis
-        folder_path_word = f_path + solver + '/' + mid_path_word + '/'           
+        mid_path_word = str("%.3e" % (alpha_)) + '_'+ str(n_nonzero_coefs) + '_' + basis         
 
     
     end_word = str(n_nonzero_coefs)
@@ -321,7 +317,7 @@ def select_solver_do_fitting_plot(\
             reconst, residual, coefs_plot,\
             recovered_energy_fraction, residual_energy_fraction, n_nonzero_coefs, \
             noise_scale, \
-            f_path + solver + '/'+ mid_path_word +'/' \
+            folder_path_word\
             + solver + mid_name_word + end_word,\
             beta_array = beta_array)
         

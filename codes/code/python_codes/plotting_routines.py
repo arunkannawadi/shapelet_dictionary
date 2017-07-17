@@ -13,7 +13,7 @@ params = {'text.latex.preamble' : [r'\usepackage{siunitx}', \
                 r'\usepackage[utf8]{inputenc}', r'\usepackage{amsmath}']}
 plt.rcParams.update(params)
 
-import pdb; pdb.set_trace()
+#import pdb; pdb.set_trace()
 
 def coeff_plot2d(coeffs,N1,N2,\
         ax=None,fig=None,\
@@ -225,6 +225,7 @@ def _get_gaussian_noise_params(arr,f_path, bins_num = None):
         ax.legend(loc='best')
         plt.savefig(f_path)
         plt.clf()
+        plt.close()
 
         return p_fit[0], p_fit[1], p_err[0], p_err[1]
     else:
@@ -325,6 +326,7 @@ def plot_decomposition(basis, image, size_X, size_Y, \
             fig.tight_layout()
             plt.savefig(Path + '_' + str_beta + '_.png')
             plt.clf()
+            plt.close()
 
 def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
         reconst, residual, coefs_initial,\
@@ -438,7 +440,7 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
                 #str_err_mu = str(token_mu % (err_mu_res))[:get_len_mu]
 
                 ax2[1,0].set_title(\
-                    ('residual image - frac. of energy = '\
+                    ('Residual image - frac. of energy = '\
                     +str(np.round(residual_energy_fraction,4))\
                     + '\n' \
                     + r'$\displaystyle \sigma = $'\
@@ -481,6 +483,7 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
             fig2.tight_layout()
             plt.savefig(Path + '_' + str_beta + '_.png')
             plt.clf()
+            plt.close()
 
 def stability_plots(basis,solver,coefs,\
         N1,N2,\
@@ -505,6 +508,7 @@ def stability_plots(basis,solver,coefs,\
     fig.tight_layout()
     plt.savefig(f_path_to_save + '_.png')
     plt.clf()
+    plt.close()
 
 def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
         n_max = 20, label_arr = None,\
@@ -625,6 +629,7 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
     fig_scat.tight_layout()
     plt.savefig(path_to_save + solver + '_' + mid_word + "_scatter_coefs.png")
     plt.clf()
+    plt.close()
 
     ## Calculate the relative variance of decompositions
     ## Coeff_stability is already in the needed form

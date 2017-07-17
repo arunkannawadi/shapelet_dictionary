@@ -68,6 +68,7 @@ def show_some_shapelets(M=4,N=4, theta = 0.):
         ax[m,n].imshow(arr,cmap=cm.bwr,vmax=1.,vmin=-0.5)
         ax[m,n].set_title(str(m)+','+str(n))
     plt.savefig('test.png')
+    plt.close()
 
 def shapelet_decomposition(image_data,\
         f_path = '/home/',\
@@ -142,7 +143,8 @@ def shapelet_decomposition(image_data,\
             imshow(image)
             plt.savefig('Plots/Initial_image_stability.png')
             plt.clf() 
-    
+            plt.close()
+
     img_galsim = galsim.Image(image,scale = 1.0, xmin=0,ymin=0)
 
     ## Here catch an exception and exit the function if the FindAdaptiveMom doesn't converge
