@@ -126,12 +126,6 @@ def coeff_plot_polar(coeffs, N1,N2, \
     ax.axis([min(x)-1., max(x)+1., min(y)-1., max(y)+1.])
     ax.minorticks_on()
 
-    ## Change the labels to double the initial
-    ## because the squares are not alligning properly // i have no better and easier sol than this
-    #ax.set_yticklabels([str("%d" % (2*val)) for val in ax.get_yticks()])
-    ## Normalize the values so that it is easier to plot
-    color_vals = color_vals / np.max(color_vals)
-
     ## Add the coeffs as squares
     ## without any white spaces remaining
     for x,y,c,h in zip(x,y,color_vals,dx):
@@ -369,6 +363,8 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
     else:
         flag = 1
 
+    flag = 0 
+
     for i in xrange(len(beta_array)): 
         
         str_beta = str("%.3f" % (beta_array[i]))
@@ -462,9 +458,9 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
             else:
                 ax2[1,0].set_title(\
                     'Residual image - Frac. of energy = '\
-                    +str(np.round(residual_energy_fraction,4))\
-                    + '\n'\
-                    + 'gauss fit failed')
+                    +str(np.round(residual_energy_fraction,4)))
+                    #+ '\n'\
+                    #+ 'gauss fit failed')
 
             fig2.suptitle('Sparse decomposition from an semi-intelligent Dictionary')
 

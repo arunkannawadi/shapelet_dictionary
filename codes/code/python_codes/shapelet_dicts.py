@@ -49,7 +49,7 @@ def check_orthonormality():
 def calculate_spark(D):
     pass
 
-def show_some_shapelets(M=4,N=4, theta = 0.):
+def show_some_shapelets(M=9,N=9, theta = 0.):
     fig,ax = plt.subplots(M,N)
     X0 = np.linspace(-8,8,17)
     Y0 = np.linspace(-8,8,17)
@@ -297,6 +297,17 @@ def shapelet_decomposition(image_data,\
             image,D,signal,solver, beta_array,\
             Num_of_shapelets = Num_of_shapelets, alpha_ = alpha_, plot = True)
 
+    ## Check the shape data for the reconstructed image
+    reconst_galsim = galsim.Image(reconst, scale =1.0, xmin=0, ymin=0)
+    reconst_shape = reconst_galsim.FindAdaptiveMom()
+    print "Shape of reconstruction"
+    reconst_x0, reconst_y0, reconst_sigma, reconst_theta, reconst_q = get_moments(reconst_shape)
+    print "x0\ty0\n"
+    print reconst_x0,'\t',reconst_y0,'\n'
+    print "sigma\ttheta\tq\n"
+    print reconst_sigma,'\t', reconst_theta,'\t', reconst_q,'\n' 
+
+
     if make_labels == True:
         return reconst, coeffs, label_arr
     else:
@@ -304,6 +315,6 @@ def shapelet_decomposition(image_data,\
 
 if __name__ == "__main__":   
     
-    show_some_shapelets(theta = 4*np.pi/3.)
+    show_some_shapelets(theta = 0.)
     #p_shapelet.plot_shapelets(6,2,1)
     #check_orthonormality()

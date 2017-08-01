@@ -12,8 +12,14 @@ def get_max_order(basis, n_max):
     a symmetric triangle. This will return the first smaller one
     than n_max which provides a complete triangle
     
-    @param basis Basis of the decomp.
-    @param n_max Chosen max number by user
+    Deprecated:
+    -----------
+    basis : Basis of the decomp.
+    // It doesn't matter if it's polar or XY the coeffs triangle is the same
+    
+    Parameters:
+    -----------
+    n_max : Chosen max number by user
 
     ---------------
     For example
@@ -60,9 +66,9 @@ def shapelet1d(n,x0=0,s=1):
 
     """Make a 1D shapelet template to be used in the construction of 2D shapelets
 
-    @param n Energy quantum number
-    @param x0 centroid
-    @param s same as beta parameter in refregier
+    n : Energy quantum number
+    x0 : centroid
+    s : same as beta parameter in refregier
 
     """
     def sqfac(k):
@@ -79,12 +85,12 @@ def shapelet2d(m,n,x0=0,y0=0,sx=1,sy=1):
     
     """Make a 2D shapelet template function to be used in image decomposition later on
     
-    @param n Energy quatum number
-    @param m Magnetic quantum number
-    @param x0 image centroid - X coordinate
-    @param y0 image centroid - Y coordinate
-    @param sx beta scale for the X shapelet space
-    @param xy beta scale for the Y shapelet space 
+    n : Energy quatum number
+    m : Magnetic quantum number
+    x0 : image centroid - X coordinate
+    y0 : image centroid - Y coordinate
+    sx : beta scale for the X shapelet space
+    xy : beta scale for the Y shapelet space 
     
     """
 
@@ -97,13 +103,13 @@ def elliptical_shapelet(m,n,x0=0,y0=0,sx=1,sy=1,theta=0):
     
     """ Make elliptical shapelets to be used in the decomposition of images later on
 
-    @param n Energy quantum numberr
-    @param m Magnetic quantum number
-    @param x0 image centroid - X coordinate
-    @param y0 image centroid - Y coordinate
-    @param sx beta scale for X shapelet space (?)
-    @param sy beta scale for Y shapelet space (?)
-    @param theta true anomaly
+    n : Energy quantum numberr
+    m : Magnetic quantum number
+    x0 : image centroid - X coordinate
+    y0 : image centroid - Y coordinate
+    sx : beta scale for X shapelet space (?)
+    sy : beta scale for Y shapelet space (?)
+    theta : true anomaly
     
     """
     u = lambda x,y: (x-x0)*np.cos(theta)/sx + (y-y0)*np.sin(theta)/sy
@@ -175,7 +181,7 @@ def decompose_cartesian(basis,\
         n_max,N1,N2,\
         x0,y0,sigma,\
         X,Y,\
-        q=0.5, theta = 0.):
+        q=1., theta = 0.):
     """
     Decompose into XY or XY_Elliptical basis, return obtained reconstruction with shapelets
     and also construct label_array and basis matrix D, return the inner product reconst.
@@ -199,7 +205,7 @@ def decompose_cartesian(basis,\
             if basis == 'XY':
                 arr = shapelet2d(m,n,x0=x0,y0=y0,sx=sigma,sy=sigma)(X,Y).flatten() 
             elif basis == 'XY_Elliptical':
-                arr = elliptical_shapelet(m,n,x0,y0, sx=a, sy=b)(Xv,Yv).flatten()
+                arr = elliptical_shapelet(m,n,x0=x0,y0=y0,sx=a,sy=b,theta=theta)(Xv,Yv).flatten()
             D[:, k] = arr
             arr_norm2 = np.dot(arr,arr)
             coef = np.dot(arr,signal)
@@ -219,7 +225,7 @@ def decompose_polar(basis,\
        x0,y0,sigma,\
        X,Y,\
        polar_basis = 'refregier',\
-       q=0.5, theta = 0.):
+       q=1., theta = 0.):
 
     """
     Decompose into polar shapelet basis, return shapelet reconstruction
@@ -288,10 +294,10 @@ def decompose_compound(basis,\
        shapelet_reconst, signal, flag_test, \
        label_arr,\
        n_max, N1,N2,\
-       x0,y0,sigma,\
+       x0,y0,\
        X,Y,\
        polar_basis = 'refregier',\
-       q=0.5, theta = 0.):
+       q=1., theta = 0.):
     
     """
     Decompose into the compound basis (@cite bosch) with provided basis matrix and signal
@@ -303,11 +309,19 @@ def decompose_compound(basis,\
     ## let the algorithms pick the weights. Watch out that the order stays symmetric 
     step = 0
     max_order = get_max_order(basis, n_max)
-
+    
     ## Define the meshgrid for the sampling of
     ## elliptical shapelets 
+    
     Xv,Yv = np.meshgrid(X,Y)
-
+    
+    Xv_polar, Yv_polar = np.meshgrid(X-x0, Y-y0)
+    Phi = np.arctan2(Yv_polar,Xv_polar)
+    R = np.sqrt(Xv_polar**2 + Yv_polar**2) 
+    ## If basis is Compound_Polar edit the meshgrid
+    ## so that surface area is perseved but the circle is stretched
+    R = R*np.sqrt(q * np.cos(Phi+theta)**2 + np.sin(Phi+theta)**2 / q) 
+    
     for sigma in beta_array:
         ## Reset indexation for a new basis
         ## with step the basis block is controled
@@ -323,24 +337,54 @@ def decompose_compound(basis,\
         ## and j is it's jth coordinate value
         a = sigma / np.sqrt(q)
         b = sigma * np.sqrt(q)
-        #Xv,Yv = np.meshgrid(X,Y)
-        for k in xrange(N1*N2):
-            ## Number of cols of D is N1*N2*len(beta_array)
-            ## beta should change when one whole basis is sweeped by k
-            m,n = k/N1, k%N1
-            if (m+n <= max_order): 
-                if flag_test:
-                    label_arr[k+(N1*N2)*step] = (str("(%d, %d)" % (n,m)))
-                arr = elliptical_shapelet(m,n,x0,y0,sx=a,sy=b)(Xv,Yv).flatten()
-                D[:,k+(N1*N2)*step] = arr
-                arr_norm2 = np.dot(arr,arr)
-                coef = np.dot(arr, signal)
-                if coef == 0:
-                    ## Watch not to overwrite the existing 
-                    base_coefs[n, m + N2*step] = 0
-                else:
-                    base_coefs[n, m + N2*step] = coef / np.sqrt(arr_norm2)
-                    shapelet_reconst[step] += coef*arr/arr_norm2
+        if 'XY' in basis:
+            for k in xrange(N1*N2):
+                ## Number of cols of D is N1*N2*len(beta_array)
+                ## beta should change when one whole basis is sweeped by k
+                m,n = k/N1, k%N1
+                if (m+n <= max_order): 
+                    if flag_test:
+                        label_arr[k+(N1*N2)*step] = (str("(%d, %d)" % (n,m)))
+                    if 'XY' in basis:
+                        arr = elliptical_shapelet(m,n,x0,y0,sx=a,sy=b,theta=theta)(Xv,Yv).flatten()
+                    D[:,k+(N1*N2)*step] = arr
+                    arr_norm2 = np.dot(arr,arr)
+                    coef = np.dot(arr, signal)
+                    if coef == 0:
+                        ## Watch not to overwrite the existing 
+                        base_coefs[n, m + N2*step] = 0
+                    else:
+                        base_coefs[n, m + N2*step] = coef / np.sqrt(arr_norm2)
+                        shapelet_reconst[step] += coef*arr/arr_norm2
+        elif 'Polar' in basis:
+            
+            k_p = 0
+            for n in xrange(max_order + 1):
+                for m in xrange(-n,n+1,2): 
+                    ## n_max - defined as:
+                    ## theta_max (galaxy size) / theta_min (smallest variation size) - 1  
+
+                    if flag_test:
+                        ## To be consistent with the indexation of the basis matrix
+                        ## D
+                        label_arr[k_p+(N1*N2)*step] = (str("(%d, %d)" % (n,m))) 
+                    arr_res = \
+                            polar_shapelets_refregier(n,m,sigma,theta = theta)(R,Phi).flatten()
+                    ## Make the basis matrix D
+                    D[:,k_p + (N1*N2)*step] = arr_res 
+                    ## Calculate the norms of basis vectors and coefficients
+                    arr_norm2_res = np.dot(arr_res,arr_res)
+                    coef_res= np.dot(arr_res, signal)
+
+                    ## Add coefficients to basis_coefs array for later use
+                    ## Make the shapelet reconstruction
+                    if (coef_res==0): 
+                        base_coefs[k_p+(N1*N2)*step] = 0 
+                    else: 
+                        base_coefs[k_p+(N1*N2)*step] = coef_res/np.sqrt(arr_norm2_res)
+                        shapelet_reconst[step] += coef_res*arr_res/arr_norm2_res
+                    k_p += 1
+
         ## Basis finished increase the step
         step += 1
 

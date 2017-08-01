@@ -214,7 +214,7 @@ def solver_lasso_reg(D, n_nonzero, signal, alpha = None):
     if (alpha == None):
         alpha = 0.001
     
-    lasso_fit = linear_model.Lasso(alpha = alpha, max_iter=1000, fit_intercept = False).fit(D, signal)
+    lasso_fit = linear_model.Lasso(alpha = alpha, max_iter=10000, fit_intercept = False).fit(D, signal)
     coeffs_lasso = lasso_fit.coef_
    
     ## Just for comparison of top 21 with the omp

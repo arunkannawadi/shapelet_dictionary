@@ -4,6 +4,8 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 
+from sklearn import manifold
+
 from shapelet_dicts import *
 from plotting_routines import plot_stability
 
@@ -18,7 +20,8 @@ def _gen_cluster_data(\
         basis, solver,\
         N1=20,N2 = 20,\
         beta_array = [1.881,2.097, 2.531, 3.182, 4.918],
-        n_max = 55, Num_of_shapelets = 21):
+        n_max = 55, Num_of_shapelets = 21,
+        alpha = 1e-7):
 
     """
     Decompose images from the given set of galaxy images and return the obtained 
@@ -34,19 +37,22 @@ def _gen_cluster_data(\
     start_time= time.time()
 
     cube = pyfits.getdata("../../data/cube_real.fits")
+    cube_noiseless = pyfits.getdata("../../data/cube_real_noiseless.fits")
+    cube_res = cube_noiseless
+
     background = 1e6*0.16**2
     image_data = np.zeros(5)
 
     root_path = '/home/kostic/Documents/codes/code/python_codes/'
-    f_path = root_path + 'Plots/Cluster_test/'
-  
+    f_path = root_path + 'Plots/Cluster_test/Noiseless/'
+    mid_word =  basis + '_' + str("%d" % (Num_of_shapelets)) + '_' + solver
     
     coeffs_val_cluster = []; 
     label_arr_cluster = []
     flag_fail = 0
     k = 0
 
-    for image in cube:
+    for image in cube_res:
         image = image - background
         galsim_img = galsim.Image(image, scale = 1.0)
         k+=1
@@ -86,14 +92,19 @@ def _gen_cluster_data(\
                     image_data,\
                     f_path = Path, \
                     basis = basis, solver = solver,\
-                    image = image, Num_of_shapelets = Num_of_shapelets,\
+                    image = image, \
+                    alpha_ = alpha, Num_of_shapelets = Num_of_shapelets,\
                     N1=N1, N2=N2,\
                     make_labels = True, n_max = n_max,\
                     beta_array = beta_array)
                 coeffs_val_cluster.append(coeffs)
                 label_arr_cluster.append(label_arr)
             except RuntimeError as error:
-                f = open('data_backup.txt', 'w')
+                coeffs_val_cluster = np.asarray(coeffs_val_cluster)
+                label_arr_cluster = np.asarray(label_arr_cluster)
+                f = open('data_backup_' \
+                        + mid_word \
+                        +'_.txt', 'w')
                 f.write("Shapelet label\tCoeff value\n")
                 for i in xrange(coeffs_val_cluster.shape[0]):
                     for j in xrange(coeffs_val_cluster.shape[1]):
@@ -103,7 +114,19 @@ def _gen_cluster_data(\
                 flag_fail = 1
                 print("RuntimeError: {0}".format(error))
                 pass
-            
+    
+    coeffs_val_cluster = np.asarray(coeffs_val_cluster)
+    label_arr_cluster = np.asarray(label_arr_cluster)
+    f_c = open('data_cluster_' \
+            + mid_word \
+            +'_.txt', 'w')
+    f_c.write("Shapelet label\tCoeff value\n")
+    for i in xrange(coeffs_val_cluster.shape[0]):
+        for j in xrange(coeffs_val_cluster.shape[1]):
+            f_c.write("%s\t%.10f\n" % \
+                    (label_arr_cluster[i][j], coeffs_val_cluster[i][j]))
+    f_c.close()
+
     nonzero_coefs = np.count_nonzero(coeffs)
     name_word = basis + '_' + str("%d" % (nonzero_coefs))
     print("Elapsed %s s" % (time.time() - start_time))
@@ -137,7 +160,7 @@ def _visualize(\
 
     ## Every coeffs array is going to have same label indexation
     root_path  = '/home/kostic/Documents/codes/code/python_codes/'
-    f_path = root_path + 'Plots/Cluster_test/Beta_Scales/' + solver + '_' + name_word + '/'
+    f_path = root_path + 'Plots/Cluster_test/Noiseless/Beta_Scales/' + solver + '_' + name_word + '/'
 
     step = 0
     for beta in beta_array:
@@ -232,17 +255,29 @@ def _visualize(\
             plt.clf()
             plt.close()
 
+#def _visualize_manifold(\
+#        coeffs_val_cluster, label_arr_cluster,\
+#        basis,solver,\
+#        beta_array,\
+#        N1=20,N2=20,\
+#        name_word = ''):
+#    
+#    n_components = 2; n_neighbours=
+#
+#    ## visualize with MDS
+#    mds = manifold.mds(n_co
 
 if __name__ == "__main__":
     
     ## Generate data_set for clustering
-    basis = 'Compound_Polar'; solver = 'omp'; 
-    n_max = 55; Num_of_shapelets = 21;
+    basis = 'Compound_XY'; solver = 'omp'; 
+    n_max = 55; Num_of_shapelets = 36;
     beta_array = [1.881, 2.097, 2.531, 3.182, 4.918]
     
     coeffs_val_cluster,label_arr_cluster,name_word,flag_fail = \
             _gen_cluster_data(\
             basis, solver, \
             n_max = n_max, Num_of_shapelets = Num_of_shapelets, beta_array = beta_array) 
-    _visualize(coeffs_val_cluster, label_arr_cluster,basis, solver,beta_array, name_word = name_word)
+    
+    #_visualize(coeffs_val_cluster, label_arr_cluster,basis, solver,beta_array, name_word = name_word)
 

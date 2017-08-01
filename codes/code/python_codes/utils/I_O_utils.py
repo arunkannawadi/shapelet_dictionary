@@ -12,7 +12,7 @@ def mkdir_p(mypath):
     from os import makedirs,path
     import os
 
-    root_path = '/home/kostic/Documents/codes/code/python_codes/'
+    root_path = ''
     
     try:
         makedirs(root_path + mypath)
