@@ -75,9 +75,9 @@ def shapelet_decomposition(image_data,\
         N1=20,N2=20, basis = 'XY', solver = 'omp', image = None, \
         coeff_0 = None, noise_scale = None, \
         alpha_ = None, Num_of_shapelets = 21, \
-        make_labels = False,\
+        make_labels = False,  test_basis = False,\
         n_max = None,\
-        column_number = 1.01, plot_decomp= False, \
+        column_number = 1.01, plot_decomp= False, plot_sol=False,\
         beta_array = [1.5, 2, 2.5]):
 
     """ 
@@ -211,7 +211,7 @@ def shapelet_decomposition(image_data,\
     ## k --> n = k/N1, m = k%N1 for cartesian
     ## k --> n,m = from indices in the adapted pascal triangle for polar
     ## -------------------------------------------------------------
-    label_arr = np.chararray(D.shape[1], itemsize=10)
+    label_arr = np.chararray(D.shape[1], itemsize=10); label_arr[:]='';
 
     ## Decompose into Polar/Polar_Elliptical / XY /XY_Elliptical / Compound / w/ inner product
     if (basis == 'Polar') or (basis == 'Polar_Elliptical'):
@@ -295,7 +295,7 @@ def shapelet_decomposition(image_data,\
             f_path, basis, coeff_0, noise_scale, \
             N1,N2,n_max,column_number,\
             image,D,signal,solver, beta_array,\
-            Num_of_shapelets = Num_of_shapelets, alpha_ = alpha_, plot = True)
+            Num_of_shapelets = Num_of_shapelets, alpha_ = alpha_, plot = plot_sol)
 
     ## Check the shape data for the reconstructed image
     reconst_galsim = galsim.Image(reconst, scale =1.0, xmin=0, ymin=0)
@@ -309,9 +309,13 @@ def shapelet_decomposition(image_data,\
 
 
     if make_labels == True:
-        return reconst, coeffs, label_arr
+        if (test_basis):
+            return D,reconst, coeffs, label_arr
+        else:
+            return reconst, coeffs, label_arr
     else:
         return reconst, coeffs
+
 
 if __name__ == "__main__":   
     

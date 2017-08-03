@@ -264,14 +264,10 @@ def decompose_polar(basis,\
             if flag_test:
                 ## To be consistent with the indexation of the basis matrix
                 ## D
-                label_arr[k_p] = (str("(%d, %d)" % (n,m)))
+                label_arr[k_p] = (str("(%d, %d)" % (n,m))) 
             
-            if (basis == 'Polar'):
-                arr_res = \
-                        polar_shapelets_refregier(n,m,sigma,theta = theta)(R,Phi).flatten()    
-            elif (basis == 'Polar_Elliptical'):
-                arr_res = \
-                        polar_shapelets_refregier(n,m,sigma,theta = theta)(R,Phi).flatten()
+            arr_res = \
+                    polar_shapelets_refregier(n,m,sigma,theta = theta)(R,Phi).flatten()
             ## Make the basis matrix D
             D[:,k_p] = arr_res 
             ## Calculate the norms of basis vectors and coefficients

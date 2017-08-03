@@ -301,7 +301,7 @@ def select_solver_do_fitting_plot(\
     end_word = str(n_nonzero_coefs)
     folder_path_word = f_path + solver + '/' + mid_path_word + '/'
  
-    if (noise_scale == 0) or (noise_scale == None):
+    if (noise_scale == 0) or (noise_scale==None) or (noise_scale == -1.):
         coefs_plot = coeffs
     else:
         coefs_plot = asses_diff(coeffs,coeff_0)

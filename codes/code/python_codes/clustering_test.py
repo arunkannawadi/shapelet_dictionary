@@ -14,7 +14,67 @@ from utils.galsim_utils import *
 from utils.I_O_utils import *
 from utils.shapelet_utils import *
 
-#import pdb; pdb.set_trace()
+import pdb; pdb.set_trace()
+
+def _perturb_and_see(D, img_idx, coeffs, label_arr, \
+        basis, solver, \
+        N1=20,N2=20, size_X=78, size_Y=78,\
+        mid_word='', str_noise_scale = '4.000e-04'):
+
+    """
+    Perturb the nonzero coeffs by 1% of their value and see what happens with the fixed basis
+    
+    D           : Basis in which the decomposition of the images was done
+                    !!! Currently just selecting the first generated basis matrix, it changes
+                    because it is theta dependant !!!
+    img_idx     : Current image label
+    coeffs      : Coefficients of the given image decomposition
+    label_arr   : Labels of the shapelets
+    """
+    from plotting_routines import plot_solution
+    from random import random,randint
+
+    Path = 'testing/Perturbated_Images/' + str(img_idx) + '/'
+    Std_file_path = '/home/kostic/Documents/codes/code/python_codes/Plots/Appropriate_beta_try/' \
+            + str(img_idx)+'/'\
+            + str_noise_scale +'/'\
+            + 'Stability/std_data/std.txt'
+    
+    _std_arr = []
+    _label_std = []
+    with open(Std_file_path, 'r') as std_file:
+        next(std_file)
+        for line in std_file:
+            data = line.split()
+            _std_arr.append(float(data[2]))
+            _label_std.append(data[0] +' '+ data[1])
+
+    _std_arr = np.asarray(_std_arr)
+    _label_std = np.asarray(_label_std)
+    _coeffs = coeffs.copy()
+    _labels = label_arr.copy()
+
+    idx_nonzero = np.where(_coeffs != 0)
+    t=0
+    for idx in idx_nonzero:
+        sign = 0
+        while sign == 0:
+            sign = randint(-1,1)
+        _coeffs[idx] += sign*_std_arr[t]; t+=1
+
+    _img_original = np.dot(D, coeffs)
+    _img_perturbed = np.dot(D,_coeffs)
+    residual = _img_original - _img_perturbed
+    residual_energy_fraction = np.sum(residual**2)/np.sum(_img_original**2)
+    recovered_energy_fraction = np.sum(_img_perturbed)/np.sum(_img_original**2)
+
+    mkdir_p(Path)
+    
+    plot_solution(basis, N1,N2,_img_original.reshape(size_X, size_Y),size_X, size_Y,\
+        _img_perturbed, residual, coeffs,\
+        recovered_energy_fraction, residual_energy_fraction, \
+        idx_nonzero[0].shape[0], None, Path)
+
 
 def _gen_cluster_data(\
         basis, solver,\
@@ -50,9 +110,10 @@ def _gen_cluster_data(\
     coeffs_val_cluster = []; 
     label_arr_cluster = []
     flag_fail = 0
-    k = 0
+    test_basis = True
+    k = 6
 
-    for image in cube_res:
+    for image in cube_res[7:22]:
         image = image - background
         galsim_img = galsim.Image(image, scale = 1.0)
         k+=1
@@ -88,15 +149,31 @@ def _gen_cluster_data(\
             mkdir_p(Path)
 
             try:
-                reconst, coeffs, label_arr = shapelet_decomposition(\
-                    image_data,\
-                    f_path = Path, \
-                    basis = basis, solver = solver,\
-                    image = image, \
-                    alpha_ = alpha, Num_of_shapelets = Num_of_shapelets,\
-                    N1=N1, N2=N2,\
-                    make_labels = True, n_max = n_max,\
-                    beta_array = beta_array)
+                if test_basis:
+                    print 'k ', k
+                    #beta_array = [sigma/4., sigma/2., sigma, 2*sigma, 4*sigma]
+                    D, reconst, coeffs, label_arr = shapelet_decomposition(\
+                        image_data,\
+                        f_path = Path, \
+                        basis = basis, solver = solver,\
+                        image = image, \
+                        alpha_ = alpha, Num_of_shapelets = Num_of_shapelets,\
+                        N1=N1, N2=N2,\
+                        make_labels = True, test_basis=test_basis,
+                        n_max = n_max,\
+                        beta_array = beta_array)    
+                else:
+                    reconst, coeffs, label_arr = shapelet_decomposition(\
+                        image_data,\
+                        f_path = Path, \
+                        basis = basis, solver = solver,\
+                        image = image, \
+                        alpha_ = alpha, Num_of_shapelets = Num_of_shapelets,\
+                        N1=N1, N2=N2,\
+                        make_labels = True, test_basis=test_basis,
+                        n_max = n_max,\
+                        beta_array = beta_array)
+                #test_basis = False
                 coeffs_val_cluster.append(coeffs)
                 label_arr_cluster.append(label_arr)
             except RuntimeError as error:
@@ -114,7 +191,9 @@ def _gen_cluster_data(\
                 flag_fail = 1
                 print("RuntimeError: {0}".format(error))
                 pass
-    
+                
+            _perturb_and_see(D, k, coeffs, label_arr, basis, solver, mid_word=mid_word)
+
     coeffs_val_cluster = np.asarray(coeffs_val_cluster)
     label_arr_cluster = np.asarray(label_arr_cluster)
     f_c = open('data_cluster_' \
@@ -255,23 +334,11 @@ def _visualize(\
             plt.clf()
             plt.close()
 
-#def _visualize_manifold(\
-#        coeffs_val_cluster, label_arr_cluster,\
-#        basis,solver,\
-#        beta_array,\
-#        N1=20,N2=20,\
-#        name_word = ''):
-#    
-#    n_components = 2; n_neighbours=
-#
-#    ## visualize with MDS
-#    mds = manifold.mds(n_co
-
 if __name__ == "__main__":
     
     ## Generate data_set for clustering
     basis = 'Compound_XY'; solver = 'omp'; 
-    n_max = 55; Num_of_shapelets = 36;
+    n_max = 55; Num_of_shapelets = 28;
     beta_array = [1.881, 2.097, 2.531, 3.182, 4.918]
     
     coeffs_val_cluster,label_arr_cluster,name_word,flag_fail = \

@@ -326,7 +326,7 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
         reconst, residual, coefs_initial,\
         recovered_energy_fraction, residual_energy_fraction, \
         n_nonzero_coefs, noise_scale, Path,\
-        beta_array = []):
+        beta_array = [-1.]):
 
     """ Plot obtained images from the coefficients obtained with the selected __solver__
     
@@ -361,9 +361,7 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
     if sigma_res == None:
         flag = 0
     else:
-        flag = 1
-
-    flag = 0 
+        flag = 1 
 
     for i in xrange(len(beta_array)): 
         
@@ -445,16 +443,6 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
                     + r'$\displaystyle \mu = $'\
                     + '(%.2e' + r'$\pm$' + '%.2e)') % \
                     (sigma_res, err_sigma_res, mu_res, err_mu_res))
-                
-               # ax2[1,0].set_title(\
-               #     'Residual image - frac. of energy = '\
-               #     +str(np.round(residual_energy_fraction,4))\
-               #     + '\n' \
-               #     + r'$\displaystyle \sigma = $'\
-               #     + '(' + str_sigma + r'$\pm$' + str_err_sigma + ') ' + exp_sigma \
-               #     + '\n' \
-               #     + r'$\displaystyle \mu = $'\
-               #     + '('+ str_mu + r'$\pm$' + str_err_mu + ') ' + exp_mu) 
             else:
                 ax2[1,0].set_title(\
                     'Residual image - Frac. of energy = '\
@@ -486,50 +474,67 @@ def stability_plots(basis,solver,coefs,\
         f_path_to_save,y_axis_scale = '',\
         ax_title = '', f_coef_output = ''):
     
-    fig, ax = plt.subplots()
+    if not np.all(coefs==0):
+        fig, ax = plt.subplots()
+            
+        if 'XY' in basis:
+            coeff_plot2d(coefs,N1,N2,ax=ax,fig=fig,\
+                    f_coef_output = f_coef_output) 
+        elif 'Polar' in basis:
+            coeff_plot_polar(coefs,N1,N2,ax=ax,fig=fig,\
+                    f_coef_output = f_coef_output)
         
-    if 'XY' in basis:
-        coeff_plot2d(coefs,N1,N2,ax=ax,fig=fig,\
-                f_coef_output = f_coef_output) 
-    elif 'Polar' in basis:
-        coeff_plot_polar(coefs,N1,N2,ax=ax,fig=fig,\
-                f_coef_output = f_coef_output)
-    
-    if y_axis_scale != '':
-        ax.set_yscale(y_axis_scale)
-    ax.grid(lw=2)
-    ax.set_aspect('equal')
-    ax.set_title(ax_title)
+        if y_axis_scale != '':
+            ax.set_yscale(y_axis_scale)
+        ax.grid(lw=2)
+        ax.set_aspect('equal')
+        ax.set_title(ax_title)
 
-    fig.tight_layout()
-    plt.savefig(f_path_to_save + '_.png')
-    plt.clf()
-    plt.close()
+        fig.tight_layout()
+        plt.savefig(f_path_to_save + '_.png')
+        plt.clf()
+        plt.close()
+    else:
+        print "All coefs zero for:\n"
+        print "%s\n" % (f_path_to_save)
 
 def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
         n_max = 20, label_arr = None,\
         beta_array = [], signal_to_noise = None, \
         basis = 'Polar', solver = 'lasso', \
         path_to_save = 'Plots/lasso/Stability/',\
-        mid_word = ''):
+        mid_word = '',flag_plot=1):
     
     """
-    Plot the stability matrices and variance matrices for selected solver method
+    Plot the stability matrices and std_rel matrices for selected solver method
     """
+    
+    from matplotlib.ticker import FormatStrFormatter
+    
     ## Initialize the folder for saving the images
     mkdir_p(path_to_save)
 
     
-    ## Initialize the stability and variance arrays
+    ## Initialize the stability and std_rel arrays
     
     len_coeffs = coeff_stability.shape[0]
     coeff_stability_res = np.zeros(len_coeffs)
     coeff_mean_value = np.zeros(len_coeffs)
     coeff_diff = np.zeros(len_coeffs)
-    variance = np.zeros(len_coeffs)
-    variance_sqrt = np.zeros(len_coeffs)
-    
-    ## Find the mean coefficients and the variance
+    std_rel_arr = np.zeros(len_coeffs)
+    std_arr = np.zeros(len_coeffs)
+
+    ## Take account for the rarely picked coeffs
+    path_to_save_std_arr = path_to_save + 'std_data/'
+    mkdir_p(path_to_save_std_arr)
+
+    picked_rarely = open(path_to_save_std_arr +'rarely_picked.txt', 'w')
+    f_var = open(path_to_save_std_arr + 'std.txt', 'w')
+    f_var.write("Label\tVar\tMean val\n")
+
+    idx_beta = 0
+
+    ## Find the mean coefficients and the std_rel
     ## <N.C>_i and Var(N.C_i)
     for i in xrange(len_coeffs):
         
@@ -537,192 +542,212 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
         ## of the same coordinate
         coeff_stability_res[i] = np.sum(coeff_stability[i,:])
         
-        ## Calculate the variance of the i_th coordinate
+        ## Calculate the std_rel of the i_th coordinate
         std_i = np.std(coeff_stability[i,:])
-        variance_sqrt[i] = np.sqrt(std_i)
+        std_arr[i] = std_i
 
         ## Calculate the mean of the i_th coordinate
+        coeff_mean_value[i] = coeff_stability_res[i]/noise_img_num
         coeff_stability_res[i] = coeff_stability_res[i]/noise_img_num
-        coeff_diff[i] = coeff_stability_res[i] - coeff_0[i]
-        coeff_mean_value[i] = coeff_stability_res[i]
-        if coeff_stability_res[i] != 0:
-            variance[i] = std_i/np.abs(coeff_stability_res[i])
-        else:
-            variance[i] = 0
-    
-    ## Asses the difference
-    ## |<N.C>_i / O.C_i - 1|
-    for i in xrange(len_coeffs):
-        if coeff_0[i] != 0:
-            coeff_stability_res[i] = np.abs(coeff_stability_res[i]/coeff_0[i] - 1)
-        else:
-            coeff_stability_res[i] = 0
-
-    ## Add the scatter plot
-    ## How many points to plot  
-    n_max = sum_max_order(basis, get_max_order(basis,n_max))    
-    n_nonzero = np.count_nonzero(coeff_stability_res)
-    n_nonzero = sum_max_order(basis,get_max_order(basis, n_nonzero))
-
-    ## Take the biggest possible number of 
-    ## coefficients
-    if n_max <= n_nonzero:
-        N_plot = n_max
-    else:
-        N_plot = n_nonzero
-
-    ## Indices measured according to the smallest number of
-    ## nonzero values in these arrays
-    nonzero_var_sqrt = len(np.where(variance_sqrt != 0)[0])
-    nonzero_coeff_mean = len(np.where(coeff_mean_value != 0)[0])
-    
-    ## If you can get all of the nonzero if not
-    ## then just N_plot values
-    ## If N_plot > nonzero * it returns the whole set of indices
-    if nonzero_var_sqrt <= nonzero_coeff_mean:
-        get_idx = np.where(variance_sqrt != 0)[0][:N_plot]
-    else:
-        get_idx = np.where(coeff_mean_value != 0)[0][:N_plot]
-
-    coeff_mean_r = coeff_mean_value[get_idx]
-    coeff_res_r = coeff_stability_res[get_idx]
-    variance_sqrt_r = variance_sqrt[get_idx] 
-    label_arr_r = label_arr[get_idx]
-
-    arange_x = np.arange(len(get_idx))
-    
-    fig_scat, ax_scat = plt.subplots(2, sharex=True)
-
-    ax_scat[0].set_title(\
-            'Scatter plot of '\
-            + r'$\displaystyle \left<N.C_i\right>$'\
-            + 'for first %d coeffs'\
-            % (N_plot))
-
-    ax_scat[1].set_title(\
-            'Scatter plot of'\
-            + r'$\displaystyle \left|\frac{\left<N.C._i\right>}{O.C._i} - 1 \right|$')
-    ax_scat[0].set_yscale('symlog')
-    ax_scat[1].set_yscale('symlog')
-    ax_scat[0].errorbar(arange_x, coeff_mean_r, yerr=variance_sqrt_r, fmt='bo', \
-            label='Coeff. value')
-    ax_scat[1].errorbar(arange_x, coeff_res_r, yerr=variance_sqrt_r,fmt='ro',\
-            label='Coeff. stability')
-    plt.xticks(arange_x, label_arr_r)
-    ax_scat[1].set_xticklabels(ax_scat[1].get_xticklabels(),rotation=90, horizontalalignment = 'right')
-    
-    ax_scat[0].tick_params(axis='x', which ='both', pad = 10)
-    ax_scat[1].tick_params(axis='x', which ='both', pad = 10)
-    ax_scat[0].set_xlim(min(arange_x) - 1, max(arange_x) + 1)
-    ax_scat[1].set_xlim(min(arange_x) - 1, max(arange_x) + 1)
-
-    ## Set the font of the ticks
-    for tick in ax_scat[0].xaxis.get_major_ticks():
-        tick.label.set_fontsize(7)
-    for tick in ax_scat[0].xaxis.get_minor_ticks():
-        tick.label.set_fontsize(7)
-    
-    fig_scat.tight_layout()
-    plt.savefig(path_to_save + solver + '_' + mid_word + "_scatter_coefs.png")
-    plt.clf()
-    plt.close()
-
-    ## Calculate the relative variance of decompositions
-    ## Coeff_stability is already in the needed form
-    ## variance_i = Var(N.C_i)
-    
-    if 'XY' in basis:
-        variance_initial = variance.reshape(N1,N2*len(beta_array))
-        variance_sqrt_initial = variance_sqrt.reshape(N1,N2*len(beta_array))
-        coefs_initial = coeff_stability_res.reshape(N1,N2*len(beta_array))
-        coefs_diff_initial = coeff_diff.reshape(N1,N2*len(beta_array))    
-    
-    str_s_to_n = str("%.3e" % (signal_to_noise)) 
-
-    for i in xrange(len(beta_array)):
         
-        str_beta = str("%.3f" % (beta_array[i]))
+        ## Calculate the difference
+        coeff_diff[i] = coeff_stability_res[i] - coeff_0[i]
+        
+        if (i%(N1*N2) == 0):
+            picked_rarely.write("Beta basis %.2e\n" % (beta_array[idx_beta]))
+            idx_beta+=1
 
-        if 'XY' in basis:
-            left_N2 = i*N2
-            right_N2 = (i+1)*N2
-            variance = variance_initial[:N1, left_N2:right_N2]
-            variance_sqrt = variance_sqrt_initial[:N1, left_N2:right_N2]
-            coefs = coefs_initial[:N1,left_N2:right_N2]
-            coefs_diff = coefs_diff_initial[:N1,left_N2:right_N2]
-        elif 'Polar' in basis:
+        ## Calculate the stability
+        if coeff_0[i] !=0:
+            coeff_stability_res[i] = np.abs(coeff_stability_res[i]/coeff_0[i] - 1)
+            ## Store the variances for only corresponding
+            ## coeff_0 coefficients, don't store the ones that are
+            ## rarely picked
+            f_var.write("%s\t%.10f\t%.10f\n" % \
+                (label_arr[i], std_arr[i], coeff_mean_value[i])) 
+        elif coeff_0[i]==0 and coeff_stability_res[i]!=0:
+            picked_rarely.write("%s\t%.2e\n" % (label_arr[i], coeff_stability_res[i]))
+            coeff_stability_res[i] = 0.
+        
+        ## Calculate relative magnitude of std 
+        if coeff_mean_value[i] != 0:
+            std_rel_arr[i] = std_i/np.abs(coeff_mean_value[i])
+        else:
+            std_rel_arr[i] = 0
+    
+    picked_rarely.close()
+    f_var.close()
+
+    if flag_plot == 1: 
+
+        ## Calculate the relative std_rel of decompositions
+        ## Coeff_stability is already in the needed form
+        ## std_rel_i = Var(N.C_i)
+        
+        str_s_to_n = str("%.3e" % (signal_to_noise)) 
+
+        for i in xrange(len(beta_array)):
+            
+            str_beta = str("%.2e" % (beta_array[i]))
+    
             left = i*(N1*N2)
             right = (i+1)*(N1*N2)
+            label_arr_curr = label_arr[left:right]
+            
+            std_rel_curr = std_rel_arr[left:right]
+            std_arr_curr = std_arr[left:right]
             coefs = coeff_stability_res[left:right]
             coefs_diff = coeff_diff[left:right]
+            coef_mean_curr = coeff_mean_value[left:right]
+            coeff_0_curr = coeff_0[left:right]
 
-        ## Plot the stability of coeffs
-        ax_title = 'Diff of coefs '\
-            + r'$\displaystyle \left<N.C._i\right> - O.C._i$' \
-            + '\n' \
-            + 'N.C is averaged over the number of noise realizations' \
-            + '\n' \
-            + 'S/N = ' + str_s_to_n\
-            + '\n'\
-            + 'beta - ' + str_beta
-        
-        f_path_to_save = path_to_save + solver + '_diff_'+mid_word+'_'+str_s_to_n+'_'\
-            +str_beta
+            ## Add the scatter plot
+            ## How many points to plot  
+            n_max = sum_max_order(basis, get_max_order(basis,n_max))    
+            n_nonzero = np.count_nonzero(coefs)
+            n_nonzero = sum_max_order(basis,get_max_order(basis, n_nonzero))
 
-        stability_plots(basis,solver,coefs_diff,\
-                N1,N2,\
-                f_path_to_save,\
-                ax_title = ax_title, f_coef_output = f_path_to_save + '_.txt')
+            ## Take the biggest possible number of 
+            ## coefficients
+            if n_max <= n_nonzero:
+                N_plot = n_max
+            else:
+                N_plot = n_nonzero
 
-        ## Plot the stability of coeffs
-        ax_title = 'Stability of coefs '\
-            + r'$\displaystyle \left|\frac{<N.C.>_i}{O.C._i} - 1\right|$' \
-            + '\n' \
-            + 'N.C is averaged over the number of noise realizations' \
-            + '\n' \
-            + 'S/N = ' + str_s_to_n\
-            + '\n'\
-            + 'beta - ' + str_beta
-        
-        f_path_to_save = path_to_save + solver + '_stability_'+mid_word+'_'+str_s_to_n+'_'\
-            +str_beta
+            ## If you can get all of the nonzero if not
+            ## then just N_plot values
+            ## If N_plot > nonzero * it returns the whole set of indices
+            get_idx = np.abs(coeff_0_curr).argsort()[::-1][:N_plot]
 
-        stability_plots(basis,solver,coefs,\
-                N1,N2,\
-                f_path_to_save,\
-                ax_title = ax_title, f_coef_output = f_path_to_save + '_.txt')
+            if n_nonzero != 0:
+                coeff_mean_r = coef_mean_curr[get_idx]
+                coeff_res_r = coefs[get_idx]
+                std_arr_r = std_arr_curr[get_idx] 
+                label_arr_r = label_arr_curr[get_idx]
+                
+                arange_x = np.arange(len(get_idx))
+                
+                fig_scat, ax_scat = plt.subplots(2, sharex=True)
+ 
+                ## For some reason if this is grouped together
+                ## it won't process the string correctly
+                str_num_of_coefs = ' for %d biggest ' % (N_plot)
+                title_0_string = \
+                        'Scatter plot of '\
+                        + r'$\displaystyle \left<N.C._i \right>$'\
+                        + str_num_of_coefs\
+                        + r'$\displaystyle \left<O.C._i \right>$'\
+                        + ' coeffs'
+                
+                ax_scat[0].set_title(title_0_string)
+
+                ax_scat[1].set_title(\
+                        'Scatter plot of'\
+                        + r'$\displaystyle \left|\frac{\left<N.C._i\right>}{O.C._i} - 1 \right|$')
+                ax_scat[0].set_yscale('symlog')
+                ax_scat[1].set_yscale('symlog')
+
+                extraticks_0 = list(coeff_mean_r[np.abs(coeff_mean_r).argsort()[-2:][::-1]])
+                extraticks_1 = list(coeff_res_r[np.abs(coeff_res_r).argsort()[-2:][::-1]])
+
+                ax_scat[0].set_yticks(list(ax_scat[0].get_yticks()) + extraticks_0)
+                ax_scat[1].set_yticks(list(ax_scat[1].get_yticks()) + extraticks_1)
+                ax_scat[0].yaxis.set_major_formatter(FormatStrFormatter('%.2e'))
+                ax_scat[1].yaxis.set_major_formatter(FormatStrFormatter('%.2e'))
+                
+                ax_scat[0].errorbar(arange_x, coeff_mean_r, yerr=std_arr_r, fmt='bo', \
+                        label='Coeff. value')
+                ax_scat[1].errorbar(arange_x, coeff_res_r, yerr=std_arr_r,fmt='ro',\
+                        label='Coeff. stability')
+
+                plt.xticks(arange_x, label_arr_r)
+                ax_scat[1].set_xticklabels(\
+                        ax_scat[1].get_xticklabels(),rotation=90, horizontalalignment = 'right')
+                
+                ax_scat[0].tick_params(axis='x', which ='both', pad = 10)
+                ax_scat[1].tick_params(axis='x', which ='both', pad = 10)
+                ax_scat[0].set_xlim(min(arange_x) - 1, max(arange_x) + 1)
+                ax_scat[1].set_xlim(min(arange_x) - 1, max(arange_x) + 1)
+
+                ## Set the font of the ticks
+                for tick in ax_scat[0].xaxis.get_major_ticks():
+                    tick.label.set_fontsize(7)
+                for tick in ax_scat[0].xaxis.get_minor_ticks():
+                    tick.label.set_fontsize(7)
+                
+                fig_scat.tight_layout()
+                plt.savefig(path_to_save \
+                        + solver + '_' + mid_word +'_'+str_beta+ "_scatter_coefs.png")
+                plt.clf()
+                plt.close()
+                    
+                ## Plot the stability of coeffs
+                ax_title = 'Diff of coefs '\
+                    + r'$\displaystyle \left<N.C._i\right> - O.C._i$' \
+                    + '\n' \
+                    + 'N.C is averaged over the number of noise realizations' \
+                    + '\n' \
+                    + 'S/N = ' + str_s_to_n\
+                    + '\n'\
+                    + 'beta - ' + str_beta
+                
+                f_path_to_save = path_to_save + solver + '_diff_'+mid_word+'_'+str_s_to_n+'_'\
+                    +str_beta
+
+                stability_plots(basis,solver,coefs_diff,\
+                        N1,N2,\
+                        f_path_to_save,\
+                        ax_title = ax_title, f_coef_output = f_path_to_save + '_.txt')
+
+                ## Plot the stability of coeffs
+                ax_title = 'Stability of coefs '\
+                    + r'$\displaystyle \left|\frac{<N.C.>_i}{O.C._i} - 1\right|$' \
+                    + '\n' \
+                    + 'N.C is averaged over the number of noise realizations' \
+                    + '\n' \
+                    + 'S/N = ' + str_s_to_n\
+                    + '\n'\
+                    + 'beta - ' + str_beta
+                
+                f_path_to_save = path_to_save + solver + '_stability_'+mid_word+'_'+str_s_to_n+'_'\
+                    +str_beta
+
+                stability_plots(basis,solver,coefs,\
+                        N1,N2,\
+                        f_path_to_save,\
+                        ax_title = ax_title, f_coef_output = f_path_to_save + '_.txt')
 
 
-        ## Plot relative variance
-        ax_title = 'Rel. variance matrix '\
-                + r'$\displaystyle \sigma\left(N.C._i\right) / |\left< N.C._i\right>|$' \
-                + '\n' \
-                + 'S/N = ' + str_s_to_n\
-                + '\n'\
-                + 'beta - ' + str_beta
-        
-        f_path_to_save = path_to_save + solver + '_variance_rel_'+mid_word+'_'+str_s_to_n+'_'\
-            +str_beta
+                ## Plot relative std_rel
+                ax_title = 'Rel. ' +r'$\displaystyle \sigma$'+ ' matrix '\
+                        + r'$\displaystyle \sigma\left(N.C._i\right) / |\left< N.C._i\right>|$' \
+                        + '\n' \
+                        + 'S/N = ' + str_s_to_n\
+                        + '\n'\
+                        + 'beta - ' + str_beta
+                
+                f_path_to_save = path_to_save + solver + '_std_rel_'+mid_word+'_'+str_s_to_n+'_'\
+                    +str_beta
 
-        stability_plots(basis,solver,variance,\
-                N1,N2,\
-                f_path_to_save,\
-                ax_title = ax_title, f_coef_output = f_path_to_save + '_.txt')
+                stability_plots(basis,solver,std_rel_curr,\
+                        N1,N2,\
+                        f_path_to_save,\
+                        ax_title = ax_title, f_coef_output = f_path_to_save + '_.txt')
 
-        ## Plot standard deviation
+                ## Plot standard deviation
 
-        ax_title = 'Variance matrix '\
-                + r'$\displaystyle \sigma\left(N.C._i\right)$' \
-                + '\n' \
-                + 'S/N = ' + str_s_to_n\
-                + '\n'\
-                + 'beta - ' + str_beta
-        
-        f_path_to_save = path_to_save + solver + '_variance_sqrt_' + mid_word + '_'\
-                + str_s_to_n+'_'\
-                +str_beta
-            
-        stability_plots(basis,solver,variance_sqrt,\
-                N1,N2,\
-                f_path_to_save,\
-                ax_title = ax_title, f_coef_output = f_path_to_save + '_.txt')
+                ax_title = r'$\displaystyle \sigma$' ' matrix '\
+                        + r'$\displaystyle \sigma\left(N.C._i\right)$' \
+                        + '\n' \
+                        + 'S/N = ' + str_s_to_n\
+                        + '\n'\
+                        + 'beta - ' + str_beta
+                
+                f_path_to_save = path_to_save + solver + '_std_' + mid_word + '_'\
+                        + str_s_to_n+'_'\
+                        +str_beta
+                    
+                stability_plots(basis,solver,std_arr_curr,\
+                        N1,N2,\
+                        f_path_to_save,\
+                        ax_title = ax_title, f_coef_output = f_path_to_save + '_.txt')
