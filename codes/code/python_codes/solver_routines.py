@@ -241,7 +241,8 @@ def select_solver_do_fitting_plot(\
         N1, N2, n_max, column_number, \
         image_initial, D, signal,solver, \
         beta_array,\
-        Num_of_shapelets = 10, alpha_ = 0.0001, plot = True):
+        Num_of_shapelets = 10, alpha_ = 0.0001, \
+        flag_gaussian_fit = True, plot = True):
     
     ## Default for foler path
     folder_path_word = ""
@@ -319,6 +320,7 @@ def select_solver_do_fitting_plot(\
             noise_scale, \
             folder_path_word\
             + solver + mid_name_word + end_word,\
-            beta_array = beta_array)
+            beta_array = beta_array,\
+            flag_gaussian_fit = flag_gaussian_fit)
         
     return reconst.reshape(size_X,size_Y),coeffs

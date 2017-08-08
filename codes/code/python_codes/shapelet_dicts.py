@@ -49,8 +49,8 @@ def check_orthonormality():
 def calculate_spark(D):
     pass
 
-def show_some_shapelets(M=9,N=9, theta = 0.):
-    fig,ax = plt.subplots(M,N)
+def show_some_shapelets(M=5,N=5, theta = 0., sigma=1., q=1., basis = 'XY_Elliptical'):
+    
     X0 = np.linspace(-8,8,17)
     Y0 = np.linspace(-8,8,17)
     
@@ -58,24 +58,51 @@ def show_some_shapelets(M=9,N=9, theta = 0.):
     Y = -X0*np.sin(theta) + Y0*np.cos(theta)
     
     Xv,Yv = np.meshgrid(X0,Y0)
-    
+    Phi = np.arctan2(Yv,Xv)
+    R = np.sqrt(Xv**2 + Yv**2)
+    R = R*np.sqrt(q * np.cos(Phi+theta)**2 + np.sin(Phi+theta)**2 / q) 
+
     #Xv = Xv0*np.cos(theta) + Yv0*np.sin(theta)
     #Yv = Yv0*np.cos(theta) - Xv0*np.sin(theta)
     
-    for m in xrange(M):
-      for n in xrange(M):
-        arr = elliptical_shapelet(m,n,sx=1.,sy=1.,theta=theta)(Xv,Yv)
-        ax[m,n].imshow(arr,cmap=cm.bwr,vmax=1.,vmin=-0.5)
-        ax[m,n].set_title(str(m)+','+str(n))
-    plt.savefig('test.png')
+    if 'Polar' in basis:
+        fig,ax = plt.subplots(N,N, figsize=(20,20))
+        ## Get the proper visualization
+        ## in the matrix
+        indices = []
+        h=N;w=N;
+        for p in xrange(N+w-1):
+            for q in xrange(min(p,h-1),max(0,p-w+1)-1,-1):
+                indices.append((h-1-q,p-q)) 
+        k=0;
+        for n in xrange(N):
+            for m in xrange(-n,n+1,2):
+                arr = polar_shapelets_refregier(n,m,sigma,theta=theta)(R,Phi)
+                ax[indices[k]].imshow(arr,cmap=cm.bwr,vmax=1.,vmin=-0.5)
+                ax[indices[k]].set_title(str(m)+','+str(n))
+                k+=1;
+        ## Only below the main diagonal is going to be
+        ## populated
+        while k<N*N:
+            fig.delaxes(ax[indices[k]]);k+=1; 
+    elif 'XY' in basis:
+        fig,ax = plt.subplots(M,N, figsize=(20,20))
+        for n in xrange(N):
+            for m in xrange(M):
+                arr = elliptical_shapelet(m,n,sx=1.,sy=1.,theta=theta)(Xv,Yv)
+                ax[m,n].imshow(arr,cmap=cm.bwr,vmax=1.,vmin=-0.5)
+                ax[m,n].set_title(str(m)+','+str(n))
+
+    plt.savefig(basis + '_shapelets.png')
     plt.close()
 
 def shapelet_decomposition(image_data,\
         f_path = '/home/',\
         N1=20,N2=20, basis = 'XY', solver = 'omp', image = None, \
         coeff_0 = None, noise_scale = None, \
-        alpha_ = None, Num_of_shapelets = 21, \
+        alpha_ = None, Num_of_shapelets = 28, \
         make_labels = False,  test_basis = False,\
+        flag_gaussian_fit = True,\
         n_max = None,\
         column_number = 1.01, plot_decomp= False, plot_sol=False,\
         beta_array = [1.5, 2, 2.5]):
@@ -86,35 +113,45 @@ def shapelet_decomposition(image_data,\
     
     Parameters:
     ----------
-    image_data : Array / mutable object in python, just to store centroid values and sigma
-                      of the noiseless image for the future decomp.
-    f_path : Path variable for saving the image decomp.
-    N1,N2 : n and m quantum numbers respectively
-    basis : do decomposition in this basis
-        -- XY - Standard Descartes coordinate shapelet space
-        -- Polar - Polar coordinate shapelet space
-        -- XY_Elliptical - Elllipse in XY shapelet space
-        -- Polar_Elliptical - Ellipse in Polar shapelets space
-    solver : choose an algorithm for fitting the coefficients
-        -- SVD - Singular Value Decomposition
-        -- omp - using the Orthogonal Matching Pursuit
-        -- P_2 - Standard least squares
-        -- P_1 - Lasso regularization technique
-    image : Image to be decomposed
-    coeff_0 : Coefficients of the 0 noise decomposition
-    noise_scale : A number which multiplies the noise_matrix
-    alpha_ : Scalar factor in fron of the l_1 norm in the lasso_regularization method
-    Num_of_shapelets : Number which refers to maximum allowed number for OMP method to use
-    n_max : This nubmer refers to the maximum order of shapelets that could be used in decomp.
-    column_number : Just used for making distinction for images noised by differend matrices
-    plot_decomp : Should the plot_solution and plot_decomposition be used or not
-    beta_array : Array of beta values to be used for compound basis
+    image_data              : Array / mutable object in python, just to store centroid values and 
+                                sigma of the noiseless image for the future decomp. If it is all 
+                                zeros then data is obtained from the given image 
+    f_path                  : Path string variable for saving the image decomp.
+    N1,N2                   : Integer upper bounds for n and m quantum numbers respectively
+    basis                   : String indicating the basis for decomposition:
+                                -- XY - Standard Descartes coordinate shapelet space
+                                -- Polar - Polar coordinate shapelet space
+                                -- XY_Elliptical - Elllipse in XY shapelet space
+                                -- Polar_Elliptical - Ellipse in Polar shapelets space
+    solver                  : String indicating the solver to be used:
+                                -- SVD - Singular Value Decomposition
+                                -- omp - using the Orthogonal Matching Pursuit
+                                -- P_2 - Standard least squares
+                                -- P_1 - Lasso regularization technique
+    image                   : ndarray of shape(size_X, size_Y) representing Image to be decomposed. 
+                                If None then image is selected from the galsim RealGalaxyCatalogue
+    coeff_0                 : Array of coefficients of the 0 noise decomposition
+    noise_scale             : A float number which multiplies the noise_matrix
+                                //used for stability tests only
+    alpha_                  : A float number to be passed as *alpha* parameter to lasso solver
+    Num_of_shapelets        : Integer representing the number of shapelets to be selected by OMP
+                                solver
+    make_labels             : Boolean to control the making of label_array, to be used in the potting
+                                afterwards for appropriate labelling of shapelets:
+                                -- True - look at test_basis description
+                                -- False - return reconstruction, coefficients
+    test_basis              : Boolean controling the return of the function:
+                                -- True - return the dictionary, reconstruction, coefficients, label_array
+                                -- False - return reconstruction, coefficients, label_array
+    n_max                   : Ingeter nubmer indicating the number of shapelets to be used in
+                                the dictionary
+    column_number           : Integer number used for making distinction for images noised by 
+                                differend matrices
+                                // used only for stability tests
+    plot_decomp, plot_sol   : Boolean flags controling the execuction of plot_solution and 
+                                plot_decomposition routines from plotting_routines
+    beta_array              : Array of beta values to be used for compound basis
     
-    To add optional keyword*:
-    -------------------------
-    q : Axis ratio for elliptical coordinates, defined as q = b / a
-    theta : Direction angle of the ellipse
-
     """
     
     ## Obtaining galaxy image if none is provided
@@ -295,7 +332,8 @@ def shapelet_decomposition(image_data,\
             f_path, basis, coeff_0, noise_scale, \
             N1,N2,n_max,column_number,\
             image,D,signal,solver, beta_array,\
-            Num_of_shapelets = Num_of_shapelets, alpha_ = alpha_, plot = plot_sol)
+            Num_of_shapelets = Num_of_shapelets, alpha_ = alpha_, \
+            flag_gaussian_fit = flag_gaussian_fit, plot = plot_sol)
 
     ## Check the shape data for the reconstructed image
     reconst_galsim = galsim.Image(reconst, scale =1.0, xmin=0, ymin=0)
@@ -319,6 +357,6 @@ def shapelet_decomposition(image_data,\
 
 if __name__ == "__main__":   
     
-    show_some_shapelets(theta = 0.)
+    show_some_shapelets(theta = np.pi/3.)
     #p_shapelet.plot_shapelets(6,2,1)
     #check_orthonormality()

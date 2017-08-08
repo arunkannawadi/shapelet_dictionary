@@ -11,19 +11,19 @@ from utils.galsim_utils import *
 from utils.I_O_utils import *
 from utils.shapelet_utils import *
 
-#import pdb; pdb.set_trace()
+import pdb; pdb.set_trace()
 
 
 def do_noise_iteration(image_0,image_data,noise_img,\
         size_X,size_Y,\
         N1,N2,\
         coeff_0,label_arr,beta_arr,\
-        solver,\
+        basis, solver,\
         noise_scale,noise_img_num,\
         Num_of_shapelets = 15, alpha = 0.0001,\
         plot_decomp = True,\
         n_max = 21, \
-        mid_word = '', img_idx = 91):
+        mid_word = '', img_idx = 91, perturbed_flag=0):
     """
     Do the noise iterations and test the shapelet coefficients stability \
             and plot the result
@@ -37,6 +37,9 @@ def do_noise_iteration(image_0,image_data,noise_img,\
     noise_img_num   :   Number of noise_img matrices
 
     """
+    str_perturbed_flag = ''
+    if perturbed_flag:
+        str_perturbed_flag = 'Beta_cluster_test/'
     ## The matrix to be used for stability calculations
     ## Variance and mean difference
     coeff_stability = np.zeros((len(coeff_0),noise_img_num))
@@ -51,10 +54,13 @@ def do_noise_iteration(image_0,image_data,noise_img,\
         
         weight_image = weight_image.flatten()
         signal_image = image_sample.flatten()
+        
+        print "Testing the noise_scale generator"
+        print np.sum(weight_image**2) / 50.**2
 
         signal_to_noise = (1./noise_scale) * np.dot(weight_image,signal_image) \
                 / np.sum(weight_image)
-       
+     
         print "Signal to Noise: \n"
         print signal_to_noise
 
@@ -93,7 +99,7 @@ def do_noise_iteration(image_0,image_data,noise_img,\
                 n_max = n_max, label_arr = label_arr, \
                 beta_array = beta_arr, signal_to_noise = signal_to_noise, \
                 basis = basis, solver = solver, \
-                path_to_save = f_path + 'Stability/',\
+                path_to_save = f_path + 'Stability_'+str_perturbed_flag+'/',\
                 mid_word = mid_word, flag_plot=1)
 
 def get_observed_image_decomp(\
@@ -141,7 +147,7 @@ def prep_and_do_noise_iter(image_data,\
         image=None, coeff_0=None,\
         Num_of_shapelets = 21, alpha = 0.01, \
         plot_decomp = True,\
-        select_img_idx = 91, n_max = 50):
+        select_img_idx = 91, n_max = 50, perturbed_flag=1):
     
     ## Make the no noise image
     f_path = 'Plots/' +str("%d" % (select_img_idx)) + '/' + str("%.3e" % (0.0)) + '/'
@@ -163,8 +169,10 @@ def prep_and_do_noise_iter(image_data,\
     image_data = [x0,y0,sigma,beta,q]
 
     if 'Compound' in basis:
-        #beta_array = np.asarray([sigma/4., sigma/2., sigma, sigma*2, sigma*4])
-        beta_array = [1.881, 2.097, 2.531, 3.182, 4.918]
+        if not perturbed_flag:
+            beta_array = np.asarray([sigma/4., sigma/2., sigma, sigma*2, sigma*4])
+        else:
+            beta_array = [1.881, 2.097, 2.531, 3.182, 4.918]
     else:
         beta_array = np.asarray([sigma])
     
@@ -180,10 +188,10 @@ def prep_and_do_noise_iter(image_data,\
     if solver != 'lstsq':
         mid_word = str(\
                 sum_max_order(basis,get_max_order(basis,Num_of_shapelets))) \
-                + '_' + str(basis)
+                + '_' + basis
     else:
         ## lstsq doesn't have any free params
-        mid_word = str(basis)
+        mid_word = basis
 
     ## If 0 noise decomp. fails don't do anything
     if (np.all(image_reconst != None)):
@@ -191,12 +199,13 @@ def prep_and_do_noise_iter(image_data,\
                 size_X,size_Y,\
                 N1,N2,\
                 coeff_0,label_arr,beta_array,\
-                solver,\
+                basis, solver,\
                 noise_scale,noise_img_num,\
                 Num_of_shapelets = Num_of_shapelets, alpha=alpha, \
                 plot_decomp = False, \
                 n_max = n_max,\
-                mid_word = mid_word, img_idx = select_img_idx)
+                mid_word = mid_word, img_idx = select_img_idx,\
+                perturbed_flag = perturbed_flag)
 
 def test_stability(solver, basis, \
         noise_scale, noise_img = None, noise_img_num = 10,\
@@ -258,17 +267,17 @@ def test_stability(solver, basis, \
                 print "current image:\n"
                 print select_img_idx
                 
-                #print "Getting observed decomposition"
+                print "Getting observed decomposition"
 
-                #obs_time0 = time.time()
-                #get_observed_image_decomp(\
-                #        N1=N1,N2=N2,basis=basis,solver=solver,\
-                #        image=None, coeff_0=None, noise_scale=0,\
-                #        Num_of_shapelets=Num_of_shapelets, \
-                #        select_img_idx = select_img_idx, plot_decomp = True,\
-                #        n_max = n_max)
-                #print "Time taken observed image decomp: "
-                #print "%s seconds" % (time.time() - obs_time0)
+                obs_time0 = time.time()
+                get_observed_image_decomp(\
+                        N1=N1,N2=N2,basis=basis,solver=solver,\
+                        image=None, coeff_0=None, noise_scale=0,\
+                        Num_of_shapelets=Num_of_shapelets, \
+                        select_img_idx = select_img_idx, plot_decomp = True,\
+                        n_max = n_max)
+                print "Time taken observed image decomp: "
+                print "%s seconds" % (time.time() - obs_time0)
 
                 print "Doing noise iteration"
 
@@ -281,7 +290,7 @@ def test_stability(solver, basis, \
                         select_img_idx = select_img_idx, plot_decomp = False,\
                         n_max = n_max)
                 
-                print "Time takne for noise iteration: "
+                print "Time taken for noise iteration: "
                 print "%s seconds" % (time.time() - noise_time0)
 
     elif(solver == 'lstsq'):
@@ -341,9 +350,9 @@ if __name__=='__main__':
     for i in xrange(noisy_mat_num):
         noise_matrix[:,i] = np.random.randn(size_X*size_Y)
 
-    for noise_scale in [noise_array[-1], noise_array[-1]]:
+    for noise_scale in [noise_array[0], noise_array[-1]]:
         # Select a method for fitting the coefficients
-        for basis in [basis_array[-2]]:
+        for basis in [basis_array[-1]]:
             
             for solver in ['omp']:#range(len(methods)): 
 

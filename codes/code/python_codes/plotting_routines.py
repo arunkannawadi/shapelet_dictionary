@@ -93,7 +93,7 @@ def coeff_plot_polar(coeffs, N1,N2, \
             x.append(n)
             y.append(m)
             color_vals.append(coeffs[k])
-            if coeffs[k] != 0:
+            if (coeffs[k] != 0) and f_coef_output !='':
                 f.write("%d\t%d\t%.3e\n" % (n,m, coeffs[k]))
             k += 1
         ## Make appropriate y coord
@@ -101,7 +101,8 @@ def coeff_plot_polar(coeffs, N1,N2, \
         ## and there is no white space between
         #y.append(np.linspace(-n,n+1,2))
 
-    f.close()
+    if f_coef_output !='':
+        f.close()
     ## Merge everything into one array of the same shape as x
     x = np.asarray(x)
     y = np.asarray(y)    
@@ -233,17 +234,17 @@ def plot_decomposition(basis, image, size_X, size_Y, \
 
     Parameters:
     -----------
-    basis : variable which controls the selected __basis__ in which decomposition was made
-    image : image that was provided for decomposition
-    size_X, size_Y : image X and Y sizes
-    base_coefs : base coefficients obtained from the decomposition
-    N1,N2 : number of coefficients used for n and m numbers respectively
-    shapelet_reconst : reconstruction of the image with the obtained base_coefs
-    signal : an image vector, obtained from flattening the original image matrix
-    residual : residual obtained with difference between signal and shapelet_reconst
-    residual_energy_fraction : energy fraction of the residual image
-    recovered_energy_fraction : energy fraction of the obtained image with shapelet_reconst
-    beta_array : Array with betas used // Added for the compound basis
+    basis                       : variable which controls the selected __basis__ in which decomposition was made
+    image                       : image that was provided for decomposition
+    size_X, size_Y              : image X and Y sizes
+    base_coefs                  : base coefficients obtained from the decomposition
+    N1,N2                       : number of coefficients used for n and m numbers respectively
+    shapelet_reconst            :   reconstruction of the image with the obtained base_coefs
+    signal                      : an image vector, obtained from flattening the original image matrix
+    residual                    : residual obtained with difference between signal and shapelet_reconst
+    residual_energy_fraction    : energy fraction of the residual image
+    recovered_energy_fraction   : energy fraction of the obtained image with shapelet_reconst
+    beta_array                  : Array with betas used // Added for the compound basis
 
     """ 
     from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -277,11 +278,11 @@ def plot_decomposition(basis, image, size_X, size_Y, \
 
             fig, ax = plt.subplots(2,2, figsize = (10, 10))
             if ('XY' in basis):
-                coeff_plot2d(coefs,N1,N2,\
+                foo, ax[1,1] = coeff_plot2d(coefs,N1,N2,\
                         ax=ax[1,1],fig=fig,\
                         f_coef_output = Path + '_' + str_beta + '_.txt')
             elif ('Polar' in basis):
-                coeff_plot_polar(coefs,N1,N2,\
+                foo, ax[1,1] = coeff_plot_polar(coefs,N1,N2,\
                         ax=ax[1,1], fig=fig,
                         f_coef_output = Path + '_' + str_beta + '_.txt')
 
@@ -306,7 +307,7 @@ def plot_decomposition(basis, image, size_X, size_Y, \
             fig.colorbar(im01,format = '%.2e', cax=cax01); 
             fig.colorbar(im10,format = '%.2e', cax=cax10)
 
-            ax[0,0].set_title('Original (noisy) image')
+            ax[0,0].set_title('Original image')
             ax[0,1].set_title('Reconstructed image - Frac. of energy = '\
                     +str(np.round(recovered_energy_fraction,4)))
             ax[1,0].set_title(\
@@ -326,7 +327,9 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
         reconst, residual, coefs_initial,\
         recovered_energy_fraction, residual_energy_fraction, \
         n_nonzero_coefs, noise_scale, Path,\
-        beta_array = [-1.]):
+        beta_array = [-1.],\
+        flag_gaussian_fit = True,\
+        title_00 = '', title_01 = '', title_10 = '', title_11 = ''):
 
     """ Plot obtained images from the coefficients obtained with the selected __solver__
     
@@ -352,16 +355,18 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
     """
     from mpl_toolkits.axes_grid1 import make_axes_locatable
     
+    flag = 0
     ## Get the residual gaussian fit // noise I generate is gaussian        
-    sigma_res, mu_res, err_sigma_res, err_mu_res = \
+    if flag_gaussian_fit:
+        sigma_res, mu_res, err_sigma_res, err_mu_res = \
             _get_gaussian_noise_params(residual,\
             Path + '_gaussian_noise_fit_.png')
     
-    ## If fit failed set flag to 0
-    if sigma_res == None:
-        flag = 0
-    else:
-        flag = 1 
+        ## If fit failed set flag to 0
+        if (sigma_res == None):
+            flag = 0
+        else:
+            flag = 1 
 
     for i in xrange(len(beta_array)): 
         
@@ -390,11 +395,11 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
             im10 = ax2[1,0].imshow(residual.reshape(size_X,size_Y), aspect = '1')
 
             if 'XY' in basis:
-                coeff_plot2d(coefs,N1,N2,\
+                fig2, ax2[1,1] = coeff_plot2d(coefs,N1,N2,\
                         ax=ax2[1,1],fig=fig2,\
                         f_coef_output = Path + '_' + str_beta + '_.txt') 
             elif 'Polar' in basis:
-                coeff_plot_polar(coefs,N1,N2,\
+                fig2, ax2[1,1] = coeff_plot_polar(coefs,N1,N2,\
                         ax=ax2[1,1],fig=fig2,\
                         f_coef_output = Path + '_' + str_beta + '_.txt')     
 
@@ -413,7 +418,7 @@ def plot_solution(basis, N1,N2,image_initial,size_X, size_Y,\
             fig2.colorbar(im00, format = '%.2e', cax=cax00);
             fig2.colorbar(im01, format = '%.2e', cax=cax01); 
             fig2.colorbar(im10, format = '%.2e', cax=cax10)
-            ax2[0,0].set_title('Original (noisy) image'); 
+            ax2[0,0].set_title('Original image'); 
             ax2[0,1].set_title('Reconstructed image - Frac. of energy = '\
                     +str(np.round(recovered_energy_fraction,4)))
                                 
@@ -478,10 +483,10 @@ def stability_plots(basis,solver,coefs,\
         fig, ax = plt.subplots()
             
         if 'XY' in basis:
-            coeff_plot2d(coefs,N1,N2,ax=ax,fig=fig,\
+            fig,ax=coeff_plot2d(coefs,N1,N2,ax=ax,fig=fig,\
                     f_coef_output = f_coef_output) 
         elif 'Polar' in basis:
-            coeff_plot_polar(coefs,N1,N2,ax=ax,fig=fig,\
+            fig,ax=coeff_plot_polar(coefs,N1,N2,ax=ax,fig=fig,\
                     f_coef_output = f_coef_output)
         
         if y_axis_scale != '':
@@ -492,11 +497,11 @@ def stability_plots(basis,solver,coefs,\
 
         fig.tight_layout()
         plt.savefig(f_path_to_save + '_.png')
-        plt.clf()
-        plt.close()
+        return fig, ax
     else:
         print "All coefs zero for:\n"
         print "%s\n" % (f_path_to_save)
+        return None, None
 
 def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
         n_max = 20, label_arr = None,\
@@ -529,7 +534,7 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
     mkdir_p(path_to_save_std_arr)
 
     picked_rarely = open(path_to_save_std_arr +'rarely_picked.txt', 'w')
-    f_var = open(path_to_save_std_arr + 'std.txt', 'w')
+    f_var = open(path_to_save_std_arr + 'std_' + mid_word + '_.txt', 'w')
     f_var.write("Label\tVar\tMean val\n")
 
     idx_beta = 0
@@ -751,3 +756,4 @@ def plot_stability(coeff_stability, coeff_0, N1, N2, noise_img_num, \
                         N1,N2,\
                         f_path_to_save,\
                         ax_title = ax_title, f_coef_output = f_path_to_save + '_.txt')
+                plt.close('all')

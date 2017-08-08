@@ -14,19 +14,45 @@ from utils.galsim_utils import *
 from utils.I_O_utils import *
 from utils.shapelet_utils import *
 
-import pdb; pdb.set_trace()
+#import pdb; pdb.set_trace()
 
-def _perturb_and_see(D, img_idx, coeffs, label_arr, \
+## Set up global LaTeX parsing
+plt.rc('text', usetex=True)
+plt.rc('font', **{'family' : "sans-serif"})
+params = {'text.latex.preamble' : [r'\usepackage{siunitx}', \
+                r'\usepackage[utf8]{inputenc}', r'\usepackage{amsmath}']}
+plt.rcParams.update(params)
+
+
+def _get_psf(\
+        psf_inner_fwhm = 0.6, psf_outer_fwhm = 2.3, \
+        psf_inner_fraction = 0.8, psf_outer_fraction = 0.2,\
+        pixel_scale = 0.16):
+    
+    ## The psf function is taken from the demo6.py from the
+    ## galsim package example codes
+
+    psf1 = galsim.Gaussian(fwhm = psf_inner_fwhm, flux = psf_inner_fraction)
+    psf2 = galsim.Gaussian(fwhm = psf_outer_fwhm, flux = psf_outer_fraction)
+    psf = psf1 + psf2
+    ## Set the scale to 0.16 to get the
+    ## proper sized psf
+    psf_image = psf.drawImage(scale = pixel_scale)
+
+    return psf_image
+
+def _perturb_and_see(image, D, img_idx, failed_arr, coeffs, label_arr, \
         basis, solver, \
         N1=20,N2=20, size_X=78, size_Y=78,\
-        mid_word='', str_noise_scale = '4.000e-04'):
+        mid_word='', str_noise_scale = '2.500e-04',\
+        beta_array=[1.881,2.097,2.531,3.182,4.918],\
+        Path = 'testing/Perturbated_Images/Appropriate_beta_scale/'):
 
     """
-    Perturb the nonzero coeffs by 1% of their value and see what happens with the fixed basis
+    Perturb the nonzero coeffs by the amount obtained in the stability tests in 
+    order to generate new images
     
-    D           : Basis in which the decomposition of the images was done
-                    !!! Currently just selecting the first generated basis matrix, it changes
-                    because it is theta dependant !!!
+    D           : Basis in which the decomposition of the images was done 
     img_idx     : Current image label
     coeffs      : Coefficients of the given image decomposition
     label_arr   : Labels of the shapelets
@@ -34,11 +60,11 @@ def _perturb_and_see(D, img_idx, coeffs, label_arr, \
     from plotting_routines import plot_solution
     from random import random,randint
 
-    Path = 'testing/Perturbated_Images/' + str(img_idx) + '/'
-    Std_file_path = '/home/kostic/Documents/codes/code/python_codes/Plots/Appropriate_beta_try/' \
+    _Path = Path + str(img_idx) + '/'
+    Std_file_path = '/home/kostic/Documents/codes/code/python_codes/Plots/' \
             + str(img_idx)+'/'\
             + str_noise_scale +'/'\
-            + 'Stability/std_data/std.txt'
+            + 'Stability_Beta_cluster_test/std_data/std_'+mid_word+'_.txt'
     
     _std_arr = []
     _label_std = []
@@ -56,7 +82,7 @@ def _perturb_and_see(D, img_idx, coeffs, label_arr, \
 
     idx_nonzero = np.where(_coeffs != 0)
     t=0
-    for idx in idx_nonzero:
+    for idx in idx_nonzero[0]:
         sign = 0
         while sign == 0:
             sign = randint(-1,1)
@@ -66,22 +92,176 @@ def _perturb_and_see(D, img_idx, coeffs, label_arr, \
     _img_perturbed = np.dot(D,_coeffs)
     residual = _img_original - _img_perturbed
     residual_energy_fraction = np.sum(residual**2)/np.sum(_img_original**2)
-    recovered_energy_fraction = np.sum(_img_perturbed)/np.sum(_img_original**2)
+    if residual_energy_fraction>0.1:
+        failed_arr.append((img_idx,residual_energy_fraction))
+    recovered_energy_fraction = np.sum(_img_perturbed**2)/np.sum(_img_original**2)
+    recovered_energy_fraction_original = np.sum(_img_original**2)/np.sum(image**2)
 
-    mkdir_p(Path)
+    ## Do the KSB shear estimage with galsim
+    from galsim.hsm import EstimateShear
     
-    plot_solution(basis, N1,N2,_img_original.reshape(size_X, size_Y),size_X, size_Y,\
-        _img_perturbed, residual, coeffs,\
-        recovered_energy_fraction, residual_energy_fraction, \
-        idx_nonzero[0].shape[0], None, Path)
+    psf_image = _get_psf()
+    gal_img_0 = galsim.Image(image.reshape(size_X,size_Y))
+    gal_img_1 = galsim.Image(_img_original.reshape(size_X,size_Y), ) 
+    gal_img_2 = galsim.Image(_img_perturbed.reshape(size_X,size_Y))
 
+    shape_data_KSB_0 =\
+            EstimateShear(gal_img_0, \
+            psf_image, \
+            shear_est='KSB')
+    shape_data_KSB_1 =\
+            EstimateShear(gal_img_1, \
+            psf_image, \
+            shear_est='KSB')
+    shape_data_KSB_2 =\
+            EstimateShear(gal_img_2, \
+            psf_image, \
+            shear_est='KSB')
+    
+    corrected_g1_0, corrected_g2_0 = shape_data_KSB_0.corrected_g1, shape_data_KSB_0.corrected_g2
+    corrected_g1_1, corrected_g2_1 = shape_data_KSB_1.corrected_g1, shape_data_KSB_1.corrected_g2
+    corrected_g1_2, corrected_g2_2 = shape_data_KSB_2.corrected_g1, shape_data_KSB_2.corrected_g2
+
+    corrected_e1_0, corrected_e2_0 = shape_data_KSB_0.corrected_e1, shape_data_KSB_0.corrected_e2
+    corrected_e1_1, corrected_e2_1 = shape_data_KSB_1.corrected_e1, shape_data_KSB_1.corrected_e2
+    corrected_e1_2, corrected_e2_2 = shape_data_KSB_2.corrected_e1, shape_data_KSB_2.corrected_e2
+
+
+    x0_0, y0_0,sigma_0, beta_0, q_0  = \
+            get_moments(shape_data_KSB_0) 
+    x0_1, y0_1, sigma_1, beta_1, q_1 = \
+            get_moments(shape_data_KSB_1)
+    x0_2, y0_2, sigma_2, beta_2, q_2 = \
+            get_moments(shape_data_KSB_2)
+
+    shape_data_0 = gal_img_0.FindAdaptiveMom()
+    shape_data_1 = gal_img_1.FindAdaptiveMom()
+    shape_data_2 = gal_img_2.FindAdaptiveMom()
+    
+    g1_0, g2_0 = shape_data_0.observed_shape.g1, shape_data_0.observed_shape.g2
+    g1_1, g2_1 = shape_data_1.observed_shape.g1, shape_data_1.observed_shape.g2
+    g1_2, g2_2 = shape_data_2.observed_shape.g1, shape_data_2.observed_shape.g2
+
+    e1_0, e2_0 = shape_data_0.observed_shape.e1, shape_data_0.observed_shape.e2
+    e1_1, e2_1 = shape_data_1.observed_shape.e1, shape_data_1.observed_shape.e2
+    e1_2, e2_2 = shape_data_2.observed_shape.e1, shape_data_2.observed_shape.e2 
+
+    X0_0, Y0_0,Sigma_0, Beta_0, Q_0  = \
+            get_moments(shape_data_0) 
+    X0_1, Y0_1, Sigma_1, Beta_1, Q_1 = \
+            get_moments(shape_data_1)
+    X0_2, Y0_2, Sigma_2, Beta_2, Q_2 = \
+            get_moments(shape_data_2)
+    
+    print "Estimated ellipticity KSB"
+    print q_0, q_1, q_2
+    print "Corrected g1_0 and g2_0"
+    print corrected_g1_0, corrected_g2_0
+    
+    print "Estimated ellipticity AdaptiveMom"
+    print Q_0, Q_1, Q_2
+    print "AdaptiveMom g1_0 and  g2_0"
+    print g1_0, g2_0
+
+    mkdir_p(_Path)
+    
+    import matplotlib.gridspec as gridspec
+    import matplotlib.cm as cm
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+    
+    fig = plt.figure(figsize = (10,10))
+    
+    ## Get the proper placement
+    gs = gridspec.GridSpec(2,4)
+    ## Initialize axes
+    ax1 = plt.subplot(gs[0,:2]); ax2 = plt.subplot(gs[0,2:]);
+    ax3 = plt.subplot(gs[1,:2]); ax4 = plt.subplot(gs[1,2:])
+        
+    vmin, vmax = min(_img_perturbed.min(),_img_original.min()), \
+                    max(_img_perturbed.max(),_img_original.max())
+            
+    im1 = ax1.imshow(\
+            image, aspect='1',vmin=vmin,vmax=vmax)
+    im2 = ax2.imshow(\
+            _img_original.reshape(size_X,size_Y), aspect = '1', vmin=vmin, vmax=vmax)
+    im3 = ax3.imshow(\
+            _img_perturbed.reshape(size_X,size_Y), aspect = '1', vmin=vmin, vmax=vmax)
+    im4 = ax4.imshow(\
+            residual.reshape(size_X,size_Y), aspect = '1')
+    
+    # Force the colorbar to be the same size as the axes
+    divider00 = make_axes_locatable(ax1)
+    cax00 = divider00.append_axes("right", size="5%")
+
+    divider01 = make_axes_locatable(ax2)
+    cax01 = divider01.append_axes("right", size="5%")
+
+    divider10 = make_axes_locatable(ax3)
+    cax10 = divider10.append_axes("right", size="5%")  
+    
+    divider11 = make_axes_locatable(ax4)
+    cax11 = divider11.append_axes("right", size="5%") 
+    
+    fig.colorbar(im1, format = '%.2e', cax=cax00);
+    fig.colorbar(im2, format = '%.2e', cax=cax01); 
+    fig.colorbar(im3, format = '%.2e', cax=cax10);
+    fig.colorbar(im4, format = '%.2e', cax=cax11);
+
+    str_g1_0 = str("%.4f" % (corrected_g1_0)); str_g2_0 = str("%.4f" % (corrected_g2_0))
+    ax1.set_title(\
+            'Original image' \
+            + '\n'\
+            + r'$\displaystyle g_1 = $'\
+            + str_g1_0 \
+            + '\t'
+            + r'$\displaystyle g_2 = $'\
+            + str_g2_0, fontsize =12)
+    
+    str_g1_1 = str("%.4f" % (corrected_g1_1)); str_g2_1 = str("%.4f" % (corrected_g2_1))
+    str_recovered_originally = str("%.4e" % (recovered_energy_fraction_original))
+    ax2.set_title(\
+            'Original reconstruction - Frac. of reconst. energy = ' \
+            + str_recovered_originally\
+            + '\n'\
+            + r'$\displaystyle g_1 = $'\
+            + str_g1_1 \
+            + '\t'\
+            + r'$\displaystyle g_2 = $'\
+            + str_g2_1, fontsize = 12); 
+    
+    str_g1_2 = str("%.4f" % (corrected_g1_2)); str_g2_2 = str("%.4f" % (corrected_g2_2))
+    str_recovered = str("%.4e" % (recovered_energy_fraction))
+    ax3.set_title(\
+            'Perturbed image - Frac. of reconst. energy = '\
+            + str_recovered\
+            + '\n'\
+            + r'$\displaystyle g_1 = $'\
+            + str_g1_2 \
+            + '\t'\
+            + r'$\displaystyle g_2 = $'\
+            + str_g2_2, fontsize = 12);
+        
+    str_residual = str("%.4e" % (residual_energy_fraction))
+    ax4.set_title(\
+            'Frac. of energy for '\
+            + r'$\displaystyle I_{reconst.} - I_{pert.}$' \
+            + ' =' \
+            + str_residual, fontsize = 12)
+
+    fig.suptitle('Mock galaxy image by perturbation', fontsize=18)
+    
+    fig.tight_layout() 
+    plt.savefig(_Path + 'Perturbed_'+mid_word+'_'+str_noise_scale+'_.png')
+    plt.clf()
+    plt.close()
 
 def _gen_cluster_data(\
         basis, solver,\
         N1=20,N2 = 20,\
         beta_array = [1.881,2.097, 2.531, 3.182, 4.918],
         n_max = 55, Num_of_shapelets = 21,
-        alpha = 1e-7):
+        alpha = 1e-7, str_noise_scale = '2.000e-04'):
 
     """
     Decompose images from the given set of galaxy images and return the obtained 
@@ -105,18 +285,23 @@ def _gen_cluster_data(\
 
     root_path = '/home/kostic/Documents/codes/code/python_codes/'
     f_path = root_path + 'Plots/Cluster_test/Noiseless/'
-    mid_word =  basis + '_' + str("%d" % (Num_of_shapelets)) + '_' + solver
+    Path_perturbed = root_path \
+            +'testing/Perturbated_Images/'+str_noise_scale +'/'
+    mid_word = str(\
+                sum_max_order(basis,get_max_order(basis,Num_of_shapelets))) \
+                + '_' + basis
     
+
     coeffs_val_cluster = []; 
-    label_arr_cluster = []
+    label_arr_cluster = [];
+    failed_arr = []
     flag_fail = 0
     test_basis = True
-    k = 6
 
-    for image in cube_res[7:22]:
+    for k in xrange(len(cube_res)):
+        image = cube_res[k]
         image = image - background
         galsim_img = galsim.Image(image, scale = 1.0)
-        k+=1
 
         try:
             shape_data = galsim_img.FindAdaptiveMom() #strict = False, watch out for failure, try block
@@ -159,7 +344,7 @@ def _gen_cluster_data(\
                         image = image, \
                         alpha_ = alpha, Num_of_shapelets = Num_of_shapelets,\
                         N1=N1, N2=N2,\
-                        make_labels = True, test_basis=test_basis,
+                        make_labels = True, test_basis=test_basis,\
                         n_max = n_max,\
                         beta_array = beta_array)    
                 else:
@@ -180,7 +365,7 @@ def _gen_cluster_data(\
                 coeffs_val_cluster = np.asarray(coeffs_val_cluster)
                 label_arr_cluster = np.asarray(label_arr_cluster)
                 f = open('data_backup_' \
-                        + mid_word \
+                        + mid_word+'_'+solver \
                         +'_.txt', 'w')
                 f.write("Shapelet label\tCoeff value\n")
                 for i in xrange(coeffs_val_cluster.shape[0]):
@@ -192,12 +377,15 @@ def _gen_cluster_data(\
                 print("RuntimeError: {0}".format(error))
                 pass
                 
-            _perturb_and_see(D, k, coeffs, label_arr, basis, solver, mid_word=mid_word)
-
+            _perturb_and_see(image, D, k, failed_arr, coeffs, label_arr, basis, solver, \
+                    mid_word=mid_word, beta_array = beta_array, str_noise_scale=str_noise_scale,\
+                    Path = Path_perturbed)
+    
+    ## Save data of the run
     coeffs_val_cluster = np.asarray(coeffs_val_cluster)
     label_arr_cluster = np.asarray(label_arr_cluster)
     f_c = open('data_cluster_' \
-            + mid_word \
+            + mid_word +'_'+solver \
             +'_.txt', 'w')
     f_c.write("Shapelet label\tCoeff value\n")
     for i in xrange(coeffs_val_cluster.shape[0]):
@@ -205,6 +393,13 @@ def _gen_cluster_data(\
             f_c.write("%s\t%.10f\n" % \
                     (label_arr_cluster[i][j], coeffs_val_cluster[i][j]))
     f_c.close()
+    
+    ## Save information on the failed images
+    f = open(Path_perturbed + 'failed_perturbations_' + mid_word + '_.txt','w')
+    f.write('Image idx\tResidual Energy fraction\n')
+    for (idx,fraction) in failed_arr:
+        f.write('%d\t%.2e\n' % (idx,fraction))
+    f.close()
 
     nonzero_coefs = np.count_nonzero(coeffs)
     name_word = basis + '_' + str("%d" % (nonzero_coefs))
@@ -337,7 +532,7 @@ def _visualize(\
 if __name__ == "__main__":
     
     ## Generate data_set for clustering
-    basis = 'Compound_XY'; solver = 'omp'; 
+    basis = 'Compound_Polar'; solver = 'omp'; 
     n_max = 55; Num_of_shapelets = 28;
     beta_array = [1.881, 2.097, 2.531, 3.182, 4.918]
     
