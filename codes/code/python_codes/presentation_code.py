@@ -44,10 +44,74 @@ plt.rcParams.update(params)
 def _get_shear(img_):
 
     galsim_img = galsim.Image(img_, scale = 1.0)
-    shear_data = galsim_img.FindAdaptiveMom()
+    shear_data = galsim_img.FindAdaptiveMom(strict = False)
 
     return shear_data.observed_shape.g1, shear_data.observed_shape.g2
 
+def _do_plotting(\
+                nrows,ncols,\
+                reconst_arr = [],\
+                path = '',\
+                theta_list = [], scales = []):
+    
+    fig, ax = plt.subplots(nrows = nrows, ncols = ncols, figsize = (15,15))
+
+    if theta_list !=[]:
+        t=0
+        for i in xrange(nrows):
+            for j in xrange(ncols):
+                theta_ = theta_list[t]
+                str_theta = str("%.1f" % (np.degrees(theta_)))
+                ax_ = ax[i,j]
+                img_ = reconst_rotated_arr[t] 
+                im = \
+                    ax_.imshow(img_, vmin = img_.min(), vmax=img_.max())
+                ax_.set_title('Rotation for \n' \
+                        + r'$\displaystyle \theta = $'\
+                        + str_theta + r'$\displaystyle ^{o}$')
+                t+=1
+                ## Locate the axes for colorbar
+                divider = make_axes_locatable(ax_)
+                cax = divider.append_axes("right", size="5%")
+                fig.colorbar(im, format = '%.2e', cax = cax)
+        
+        plt.tight_layout()
+        plt.savefig(path)
+        plt.close()
+    elif scales != []:
+        t=0
+        for i in xrange(nrows):
+            for j in xrange(ncols):
+                str_scale = str("%.1f" % (scales_[t]))
+                ax_ = ax[i,j]
+                img_ = reconst_scaled_real[t]
+                g1,g2 = _get_shear(img_)
+                str_g1 = str("%.4f" % (g1)); str_g2 = str("%.4f" % (g2))
+                im = \
+                    ax_.imshow(img_, vmin = img_.min(), vmax=img_.max())
+                ax_.set_title('Scaled for \n' \
+                        + r'$\displaystyle \eta = $'\
+                        + str_scale\
+                        + '\n'\
+                        + r'$\displaystyle g_1 = $'\
+                        + str_g1 + '\t'\
+                        + r'$\displaystyle g_2 = $'\
+                        + str_g2)
+                t+=1
+                ## Locate the axes for colorbar
+                divider = make_axes_locatable(ax_)
+                cax = divider.append_axes("right", size="5%")
+                fig.colorbar(im, format = '%.2e', cax = cax)
+       
+        try:
+            plt.tight_layout()
+        except RuntimeError as error:
+            print "RuntimeError {0}".format(error)
+            pass
+        plt.savefig(path)
+        plt.close()
+    else:
+        print "Both arrays empty"
 
 if __name__ == '__main__':
 
@@ -56,21 +120,18 @@ if __name__ == '__main__':
     cube_real = pyfits.getdata('../../data/cube_real.fits')
     cube_noiseless = pyfits.getdata('../../data/cube_real_noiseless.fits')
 
-    basis = 'XY_Elliptical'; N1 = 20; N2=20; solver = 'svd'; n_max=55; 
-    Num_of_shapelets = 36; alpha = 0.1; 
+    basis = 'Compound_Polar'; N1 = 20; N2=20; solver = 'lasso'; n_max=55; 
+    Num_of_shapelets = 28; alpha = 0.01; snr = 50.;
     selected_imgs = [0, 25, 51, 75, 94];
-    mid_word = str(\
-                sum_max_order(basis,get_max_order(basis,Num_of_shapelets))) \
-                + '_' + basis
 
 
     ## Background is the same for all images from the
     ## galsim example catalogue
     background = 1.e6*0.16**2
     
-
-    Path_noisy_0 = '/home/kostic/Documents/_Presentation/Observed/'
-    Path_noiseless_0 = '/home/kostic/Documents/_Presentation/Noiseless/'
+    root_path = '/home/kostic/Documents/_Presentation/'
+    Path_noisy_0 = root_path + 'Observed/'
+    Path_noiseless_0 = root_path + 'Noiseless/'
     Path_theta_noisy_0 = Path_noisy_0 + 'theta_rotation/'
     Path_theta_noiseless_0 = Path_noiseless_0 + 'theta_rotation/'
     Path_scale_noisy_0 = Path_noisy_0 + 'scaled/'
@@ -79,26 +140,32 @@ if __name__ == '__main__':
     for idx in selected_imgs:
         str_img_idx = str("%d" % (idx))
         
-        Path_noisy = Path_noisy_0 + str_img_idx + '/'
-        Path_noiseless = Path_noiseless_0 + str_img_idx + '/'
-        Path_theta_noisy = Path_theta_noisy_0 + str_img_idx + '/'
-        Path_theta_noiseless = Path_theta_noiseless_0 + str_img_idx + '/'
-        Path_scale_noisy = Path_scale_noisy_0 + str_img_idx + '/'
-        Path_scale_noiseless = Path_scale_noiseless_0 + str_img_idx + '/'
-
         img_real = cube_real[idx] - background
         img_noiseless = cube_noiseless[idx] - background
+
+        gal_real = galsim.Image(img_real.copy(), scale = 1.0)
+        gal_noiseless = galsim.Image(img_noiseless.copy(), scale = 1.0)
         
-        gal_real = galsim.Image(img_real, scale = 1.0)
-        gal_noiseless = galsim.Image(img_noiseless, scale = 1.0)
+        ## Add noise to make the image more realistic
+        gal_noiseless.addNoiseSNR(\
+                noise = galsim.GaussianNoise(), snr = snr, preserve_flux = True)
+        str_snr = str("%.1f" % (snr))
+        img_noiseless = gal_noiseless.array
+
+        Path_noisy = Path_noisy_0 + str_img_idx + '/'
+        Path_noiseless = Path_noiseless_0 + 'SNR/' + str_snr + '/' + str_img_idx + '/'
+        Path_theta_noisy = Path_theta_noisy_0 + str_img_idx + '/'
+        Path_theta_noiseless = Path_theta_noiseless_0 +'SNR/' + str_snr + '/' + str_img_idx + '/'
+        Path_scale_noisy = Path_scale_noisy_0 + str_img_idx + '/'
+        Path_scale_noiseless = Path_scale_noiseless_0 + 'SNR/' + str_snr + '/' + str_img_idx + '/'
 
         ## Get the real beta scales and rotation
         shape_real = gal_real.FindAdaptiveMom()
         shape_noiseless = gal_real.FindAdaptiveMom()
 
         image_data_real = get_moments(shape_real)
-        image_data_noiseless  = get_moments(shape_noiseless)
-        
+        image_data_noiseless  = get_moments(shape_noiseless) 
+
         ## Get the correct beta scale here
         if 'Compound' in basis:
             sigma_real = image_data_real[2]
@@ -115,7 +182,7 @@ if __name__ == '__main__':
             beta_array_real = [image_data_real[2]]
             beta_array_noiseless = [image_data_noiseless[2]]
 
-        print "Getting the observed image %d data\n" % idx
+        print "Getting the observed image %d data\n\n" % idx
 
         ## Get the data for the noisy image
         D_real, reconst_real, coeffs_real, label_arr_real = \
@@ -141,7 +208,7 @@ if __name__ == '__main__':
         reconst_rotated_arr.append(reconst_real)
     
         for theta in theta_arr:
-            print "Obtaining rotated dictionary by %f" % theta
+            print "Obtaining rotated dictionary by %f\n\n" % theta
             
             image_data_real_rotated = np.asarray(image_data_real).copy(); 
             image_data_real_rotated[3] = image_data_real_rotated[3] + theta 
@@ -163,41 +230,18 @@ if __name__ == '__main__':
         
         nrows = int(np.round((num+1)/2.))
         ncols = nrows
-        fig, ax = plt.subplots(nrows = nrows, ncols = ncols, figsize = (10,10))
+        mid_word = str("%d" % (np.count_nonzero(coeffs_real))) \
+                + '_' + basis
         
-        colormap = plt.get_cmap('jet')
-        vmin, vmax = reconst_real.min(), reconst_real.max() 
-        
-        ## Get the range for the colorbar
-        norm = mpl.colors.Normalize(vmin=vmin,vmax=vmax)
-        ## create a ScalarMappable and initialize a data structure
-        s_m = cm.ScalarMappable(cmap=colormap, norm=norm); s_m.set_array([])
-        
-        t=0
-        for i in xrange(nrows):
-            for j in xrange(ncols):
-                theta_ = theta_list[t]
-                str_theta = str("%.1f" % (np.degrees(theta_)))
-                ax_ = ax[i,j]
-                im = \
-                    ax_.imshow(reconst_rotated_arr[t], vmin = vmin, vmax=vmax)
-                ax_.set_title('Rotation for \n' \
-                        + r'$\displaystyle \theta = $'\
-                        + str_theta + r'$\displaystyle ^{o}$')
-                t+=1
-                ## Locate the axes for colorbar
-                divider = make_axes_locatable(ax_)
-                cax = divider.append_axes("right", size="5%")
-                fig.colorbar(im, format = '%.2e', cax = cax)
-        
-
         mkdir_p(Path_theta_noisy)
-        plt.tight_layout()
-        plt.savefig(Path_theta_noisy \
-                + solver + '_' + mid_word +'_' + str_img_idx + '_.png')
-        plt.close()
+        _do_plotting(\
+                nrows,ncols,\
+                reconst_arr = reconst_rotated_arr,\
+                path = Path_theta_noisy \
+                + solver + '_' + mid_word +'_' + str_img_idx + '_.png',\
+                theta_list = theta_list)
 
-        print "Getting the noiseless image %d data\n" % idx
+        print "Getting the noiseless image %d data\n\n" % idx
         
         ## Get the data for the noiselss images
         D_noiseless, reconst_noiseless, coeffs_noiseless, label_arr_noiseless = \
@@ -210,7 +254,7 @@ if __name__ == '__main__':
                     N1=N1, N2=N2,\
                     make_labels = True, test_basis=True,\
                     plot_decomp = False, plot_sol = True,\
-                    flag_gaussian_fit = False,\
+                    flag_gaussian_fit = True,\
                     n_max = n_max,\
                     beta_array = beta_array_noiseless)
         
@@ -219,7 +263,7 @@ if __name__ == '__main__':
         reconst_rotated_arr.append(reconst_noiseless)
     
         for theta in theta_arr:
-            print "Obtaining rotated dictionary by %f" % theta
+            print "Obtaining rotated dictionary by %f\n\n" % theta
             
             image_data_real_rotated = np.asarray(image_data_noiseless).copy(); 
             image_data_real_rotated[3] = image_data_real_rotated[3] + theta 
@@ -241,43 +285,21 @@ if __name__ == '__main__':
                     np.dot(D_rotated_noiseless, coeffs_noiseless).reshape(size_X,size_Y)) 
         
         nrows = int(np.round((num+1)/2.))
-        ncols = nrows
-        fig, ax = plt.subplots(nrows = nrows, ncols = ncols, figsize=(10,10))
-        
-        colormap = plt.get_cmap('jet')
-        vmin, vmax = reconst_real.min(), reconst_real.max() 
-        
-        ## Get the range for the colorbar
-        norm = mpl.colors.Normalize(vmin=vmin,vmax=vmax)
-        ## create a ScalarMappable and initialize a data structure
-        s_m = cm.ScalarMappable(cmap=colormap, norm=norm); s_m.set_array([])
-        
-        t=0
-        for i in xrange(nrows):
-            for j in xrange(ncols):
-                theta_ = theta_list[t]
-                str_theta = str("%.1f" % (np.degrees(theta_)))
-                ax_ = ax[i,j]
-                im = \
-                    ax_.imshow(reconst_rotated_arr[t], vmin = vmin, vmax=vmax)
-                ax_.set_title('Rotation for \n' \
-                        + r'$\displaystyle \theta = $'\
-                        + str_theta + r'$\displaystyle ^{o}$')
-                t+=1
-                ## Locate the axes for colorbar
-                divider = make_axes_locatable(ax_)
-                cax = divider.append_axes("right", size="5%")
-                fig.colorbar(im, format = '%.2e', cax = cax)
-       
+        ncols = nrows     
+        mid_word_n = str("%d" % (np.count_nonzero(coeffs_noiseless))) \
+                + '_' + basis
+
         mkdir_p(Path_theta_noiseless)
-        plt.tight_layout()
-        plt.savefig(Path_theta_noiseless \
-                + solver + '_'+mid_word+'_' + str_img_idx + '_.png')
-        plt.close()        
+        _do_plotting(\
+                nrows,ncols,\
+                reconst_arr = reconst_rotated_arr,\
+                path = Path_theta_noiseless \
+                + solver + '_' + mid_word_n +'_' + str_img_idx + '_.png',\
+                theta_list = theta_list)   
         
         ## Scale the coefficients and show
-        num = 3
-        low = 1.6; high = 2;
+        num = 5
+        low = 0.5; high = 2;
         scales = np.linspace(low,high, num = num)
         scales_ = [1.] + list(scales)
         reconst_scaled_real = [reconst_real]
@@ -303,45 +325,18 @@ if __name__ == '__main__':
                         beta_array = beta_arr_)
             reconst_scaled_real.append(np.dot(D_scaled_real,coeffs_real).reshape(size_X,size_Y))
 
-        nrows = int(np.round((num+1)/2.))
-        ncols = nrows
-        fig, ax = plt.subplots(nrows = nrows, ncols = ncols, figsize=(10,10))
-        
-        colormap = plt.get_cmap('jet') 
-        
-        t=0
-        for i in xrange(nrows):
-            for j in xrange(ncols):
-                str_scale = str("%.1f" % (scales_[t]))
-                ax_ = ax[i,j]
-                img_ = reconst_scaled_real[t]
-                g1,g2 = _get_shear(img_)
-                str_g1 = str("%.4f" % (g1)); str_g2 = str("%.4f" % (g2))
-                im = \
-                    ax_.imshow(img_, vmin = img_.min(), vmax=img_.max())
-                ax_.set_title('Scaled for \n' \
-                        + r'$\displaystyle \eta = $'\
-                        + str_scale\
-                        + '\n'\
-                        + r'$\displaystyle g_1 = $'\
-                        + str_g1 + '\t'\
-                        + r'$\displaystyle g_2 = $'\
-                        + str_g2)
-                t+=1
-                ## Locate the axes for colorbar
-                divider = make_axes_locatable(ax_)
-                cax = divider.append_axes("right", size="5%")
-                fig.colorbar(im, format = '%.2e', cax = cax)
-       
-        mkdir_p(Path_scale_noisy)
-        try:
-            plt.tight_layout()
-        except RuntimeError as error:
-            print "RuntimeError {0}".format(error)
-        plt.savefig(Path_scale_noisy \
-                + solver + '_'+mid_word+'_' + str_img_idx + '_.png')
-        plt.close()
+        nrows = 2        
+        ncols = int(np.round((num+1)/2.))
 
+        mkdir_p(Path_scale_noisy)
+
+        _do_plotting(\
+                nrows,ncols,\
+                reconst_arr = reconst_scaled_real,\
+                path = Path_scale_noisy \
+                + solver + '_'+mid_word+'_' + str_img_idx + '_.png',\
+                scales = scales) 
+       
         ## Noiseless
         reconst_scaled_noiseless = [reconst_noiseless]
         beta_arr_noiseless = np.asarray(beta_array_noiseless)
@@ -356,53 +351,23 @@ if __name__ == '__main__':
                         image_data_,\
                         f_path = Path_noisy, \
                         basis = basis, solver = solver,\
-                        image = img_real, \
+                        image = img_noiseless, \
                         alpha_ = alpha, Num_of_shapelets = Num_of_shapelets,\
                         N1=N1, N2=N2,\
                         make_labels = True, test_basis=True,\
                         plot_decomp = False, plot_sol = False,\
                         n_max = n_max,\
                         beta_array = beta_arr_)
-            reconst_scaled_noiseless.append(np.dot(D_scaled_noiseless,coeffs_noiseless).reshape(size_X,size_Y)) 
+            reconst_scaled_noiseless.append(\
+                    np.dot(D_scaled_noiseless,coeffs_noiseless).reshape(size_X,size_Y)) 
         
-        nrows = int(np.round((num+1)/2.))
-        ncols = nrows
-        fig, ax = plt.subplots(nrows = nrows, ncols = ncols, figsize = (10,10))
+        nrows = 2
+        ncols = int(np.round((num+1)/2.))
         
-        colormap = plt.get_cmap('jet') 
-
-        t=0
-        for i in xrange(nrows):
-            for j in xrange(ncols):
-                str_scale = str("%.1f" % (scales_[t]))
-                ax_ = ax[i,j]
-                img_ = reconst_scaled_noiseless[t]
-                g1,g2 = _get_shear(img_)
-                str_g1 = str("%.4f" % (g1)); str_g2 = str("%.4f" % (g2))
-                im = \
-                    ax_.imshow(img_, vmin = img_.min(), vmax=img_.max())
-                ax_.set_title('Scaled for \n' \
-                        + r'$\displaystyle \eta = $'\
-                        + str_scale\
-                        + '\n'\
-                        + r'$\displaystyle g_1 = $'\
-                        + str_g1 + '\t'\
-                        + r'$\displaystyle g_2 = $'\
-                        + str_g2)
-                t+=1
-                ## Locate the axes for colorbar
-                divider = make_axes_locatable(ax_)
-                cax = divider.append_axes("right", size="5%")
-                fig.colorbar(im, format = '%.2e', cax = cax)
-       
         mkdir_p(Path_scale_noiseless)
-        try:
-            plt.tight_layout()
-        except RuntimeError as error:
-            print "RuntimeError {0}".format(error)
-            pass
-
-        plt.savefig(Path_scale_noiseless \
-                + solver + '_'+mid_word+'_' + str_img_idx + '_.png')
-        plt.close()
-
+        _do_plotting(\
+                nrows,ncols,\
+                reconst_arr = reconst_scaled_noiseless,\
+                path = Path_scale_noiseless \
+                + solver + '_'+mid_word_n+'_' + str_img_idx + '_.png',\
+                scales = scales) 

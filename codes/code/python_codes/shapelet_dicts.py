@@ -49,7 +49,7 @@ def check_orthonormality():
 def calculate_spark(D):
     pass
 
-def show_some_shapelets(M=5,N=5, theta = 0., sigma=1., q=1., basis = 'XY_Elliptical'):
+def show_some_shapelets(M=5,N=5, theta = 0., sigma=1., q=1., basis = 'Polar_Elliptical'):
     
     X0 = np.linspace(-8,8,17)
     Y0 = np.linspace(-8,8,17)
@@ -79,7 +79,7 @@ def show_some_shapelets(M=5,N=5, theta = 0., sigma=1., q=1., basis = 'XY_Ellipti
             for m in xrange(-n,n+1,2):
                 arr = polar_shapelets_refregier(n,m,sigma,theta=theta)(R,Phi)
                 ax[indices[k]].imshow(arr,cmap=cm.bwr,vmax=1.,vmin=-0.5)
-                ax[indices[k]].set_title(str(m)+','+str(n))
+                ax[indices[k]].set_title(str(m)+','+str(n), fontsize=20)
                 k+=1;
         ## Only below the main diagonal is going to be
         ## populated
@@ -91,7 +91,7 @@ def show_some_shapelets(M=5,N=5, theta = 0., sigma=1., q=1., basis = 'XY_Ellipti
             for m in xrange(M):
                 arr = elliptical_shapelet(m,n,sx=1.,sy=1.,theta=theta)(Xv,Yv)
                 ax[m,n].imshow(arr,cmap=cm.bwr,vmax=1.,vmin=-0.5)
-                ax[m,n].set_title(str(m)+','+str(n))
+                ax[m,n].set_title(str(m)+','+str(n), fontsize=20)
 
     plt.savefig(basis + '_shapelets.png')
     plt.close()
@@ -337,14 +337,17 @@ def shapelet_decomposition(image_data,\
 
     ## Check the shape data for the reconstructed image
     reconst_galsim = galsim.Image(reconst, scale =1.0, xmin=0, ymin=0)
-    reconst_shape = reconst_galsim.FindAdaptiveMom()
-    print "Shape of reconstruction"
-    reconst_x0, reconst_y0, reconst_sigma, reconst_theta, reconst_q = get_moments(reconst_shape)
-    print "x0\ty0\n"
-    print reconst_x0,'\t',reconst_y0,'\n'
-    print "sigma\ttheta\tq\n"
-    print reconst_sigma,'\t', reconst_theta,'\t', reconst_q,'\n' 
-
+    try:
+        reconst_shape = reconst_galsim.FindAdaptiveMom()
+        print "Shape of reconstruction"
+        reconst_x0, reconst_y0, reconst_sigma, reconst_theta, reconst_q = get_moments(reconst_shape)
+        print "x0\ty0\n"
+        print reconst_x0,'\t',reconst_y0,'\n'
+        print "sigma\ttheta\tq\n"
+        print reconst_sigma,'\t', reconst_theta,'\t', reconst_q,'\n' 
+    except RuntimeError as error:
+        print "RuntimeError {0}".format(error)
+        pass 
 
     if make_labels == True:
         if (test_basis):
@@ -357,6 +360,6 @@ def shapelet_decomposition(image_data,\
 
 if __name__ == "__main__":   
     
-    show_some_shapelets(theta = np.pi/3.)
+    show_some_shapelets(theta = 0.)
     #p_shapelet.plot_shapelets(6,2,1)
     #check_orthonormality()

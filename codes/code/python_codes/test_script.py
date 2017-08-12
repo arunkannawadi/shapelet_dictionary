@@ -233,7 +233,7 @@ def _dist_matrix_angle_mat(coeffs_matrix,beta_array, mid_word = '', \
         plt.close('all')
 
 
-def _SOM(coeffs_matrix, labels,\
+def _SOM(data, labels,\
         beta_array,\
         mid_word = '',\
         n_job = 1,\
@@ -245,47 +245,44 @@ def _SOM(coeffs_matrix, labels,\
     import sompy_custom as sompy_c
     from sompy_custom.sompy import SOMFactory
     from sompy_custom.visualization.mapview import View2D
-
-    k = 0
-    for beta in beta_array:
-        print beta
-        str_beta = str("%.3f" % (beta))
-        data = coeffs_matrix[:,k,:]; k+=1
         
-        som = SOMFactory.build(data, \
-            mapsize=mapsize, normalization=normalization, initialization=initialization,\
-            component_names=labels)
-        som.train(n_job=n_job, \
-            verbose=verbose, \
-            train_rough_len=train_rough_len, train_finetune_len=train_finetune_len)
-        
-        print "Topographic error"
-        print som.calculate_topographic_error()
+    som = SOMFactory.build(data, \
+        mapsize=mapsize, normalization=normalization, initialization=initialization,\
+        component_names=labels)
+    som.train(n_job=n_job, \
+        verbose=verbose, \
+        train_rough_len=train_rough_len, train_finetune_len=train_finetune_len)
+    
+    print "Topographic error"
+    print som.calculate_topographic_error()
 
-        print "Final quantization error"
-        print np.mean(som._bmu[1])
+    print "Final quantization error"
+    print np.mean(som._bmu[1])
 
-        print "\n"
-        print "View_2D in process ...\n"
+    print "\n"
+    print "View_2D in process ...\n"
 
-        map_size = som.calculate_map_size('rect')
-        print "Map size\n"
-        print map_size, "\n"
+    map_size = som.calculate_map_size('rect')
+    print "Map size\n"
+    print map_size, "\n"
+    
+    str_mapsize_2 = str("%d" % (mapsize[1]))
+    str_mapsize_1 = str("%d" % (mapsize[0]))
 
-        view2D = View2D(50, 50, mid_word,text_size=10)
-        view2D.show(som,col_sz=4, cmap=cmap, which_dim='all',desnormalize=True)
-        view2D.save('testing/SOM_' + mid_word + '_' + str_beta + '_.png')
-        plt.clf()
+    view2D = View2D(10, 10, mid_word,text_size=10)
+    view2D.show(som,col_sz=4, cmap=cmap, which_dim='all',desnormalize=True)
+    view2D.save('testing/SOM_' + mid_word + '_' + str_beta + '_' + str_mapsize_1 + '_' + str_mapsize_2 +'_.png')
+    plt.clf()
 
-        print "UMatrix in process ...\n"
+    print "UMatrix in process ...\n"
 
-        u_mat = sompy_c.umatrix.UMatrixView(50, 50, 'umatrix',\
-                show_axis=True, text_size=8, show_text=True)
-        u_MAT = u_mat.build_u_matrix(som, distance=1, row_normalized=False)
-        u_MAT = u_mat.show(som, \
-                distance2=1, row_normalized=False, show_data=True, contooor=True,blob=False)
-        plt.savefig('testing/SOM_U_mat_' + mid_word + '_' + str_beta + '_.png')
-        plt.close('all')
+    u_mat = sompy_c.umatrix.UMatrixView(10, 10, 'umatrix',\
+            show_axis=True, text_size=8, show_text=True)
+    u_MAT = u_mat.build_u_matrix(som, distance=1, row_normalized=False)
+    u_MAT = u_mat.show(som, \
+            distance2=1, row_normalized=False, show_data=True, contooor=True,blob=False)
+    plt.savefig('testing/SOM_U_mat_' + mid_word + '_' + str_beta +'_' + str_mapsize_1 + '_' + str_mapsize_2 +'_.png')
+    plt.close('all')
 
 def _MDS(galaxy_vectors, \
         n_components=2, max_iter=3000, metric=True, verbose=1,\
@@ -334,8 +331,8 @@ if __name__ == '__main__':
     Num_of_shapelets = 28; str_Num_of_shapelets = str("%d" % (Num_of_shapelets))
     
     _dist_flag = 0
-    _som_flag = 0
-    _mds_flag = 1
+    _som_flag = 1
+    _mds_flag = 0
     _cluster_flag = 0
     
     f = open('data_cluster_'+basis+'_'+ str_Num_of_shapelets + '_.txt', 'r')
@@ -366,10 +363,11 @@ if __name__ == '__main__':
             n_components=2, max_iter=3000, metric=True, verbose=1,\
             mid_word=basis+'_'+str_Num_of_shapelets+'_' +solver)
     if _som_flag:
+            galaxy_vectors = coeffs_val_cluster.reshape((100, 5*55))
             _SOM(\
-                coeffs_matrix, label_matrix[0,0,:], beta_array,\
+                galaxy_vectors, label_matrix[0,0,:], beta_array,\
                 mid_word = basis + '_' + str_Num_of_shapelets,
-                n_job = 1,verbose = 'info', mapsize = [20,20],\
+                n_job = 1,verbose = 'info', mapsize = [2,2],\
                 train_rough_len = 500,train_finetune_len=500,\
                 initialization='pca',cmap = mpl.cm.bwr)  
     if _cluster_flag:
